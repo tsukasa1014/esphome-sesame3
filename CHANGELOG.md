@@ -1,5 +1,8 @@
 # Changelog
 
+## [v0.31.0] 2026-08-23
+- Bump libsesame3bt to 0.50.0
+
 ## [v0.30.0] 2026-08-15
 - Bump libsesame3bt version.
 
@@ -79,7 +82,7 @@
 
 ## [v0.19.0] 2025-08-10
 - Support ESPHome 2025.7.0 (Arduino ESP32 3.x)
-  (fixes #9)
+	(fixes #9)
 
 ## [v0.18.1] 2025-06-14
 - Add ESPHome minimum version validation
@@ -91,7 +94,7 @@
 ## [v0.17.0] 2025-05-31
 - Make `update()` callable from lambda (was mistakenly made private).
 - Improved compatibility with [esphome-sesame_server](https://github.com/homy-newfs8/esphome-sesame_server).
-  You can now connect to SESAME Touch/Remote devices registered on the server.
+	You can now connect to SESAME Touch/Remote devices registered on the server.
 - When using dual-role, use [esphome-sesame_server](https://github.com/homy-newfs8/esphome-sesame_server) v0.2.0 or later.
 
 ## [v0.16.1] 2025-05-10
@@ -117,8 +120,8 @@
 - SESAME bot (not Bot2) history and status handling improved
 - Properly handle JAM detection timeout (SESAME 3/4)
 - Documentation modification to README History type table
-  - DRIVE_LOCKED/DRIVE_UNLOCKED was observed on SESAME 4
-  - Added BLE_CLICK
+	- DRIVE_LOCKED/DRIVE_UNLOCKED was observed on SESAME 4
+	- Added BLE_CLICK
 
 ## [v0.13.0] 2024-12-30
 
@@ -140,8 +143,8 @@
 - Big YAML schema change (see README).
 - Support SESAME Touch / Touch PRO / Bike 2 / Open Sensor (Tested only on Touch. Please report other devices).
 - Add option
-  - always_connect
-  - update_interval
+	- always_connect
+	- update_interval
 
 ## [v0.9.0] 2024-04-04
 

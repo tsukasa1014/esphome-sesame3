@@ -1,11 +1,12 @@
 import logging
 import string
 
-from esphome import core
 import esphome.codegen as cg
-from esphome.components import binary_sensor, esp32, lock, sensor, text_sensor
 import esphome.config as esp_config
 import esphome.config_validation as cv
+import esphome.final_validate as fv
+from esphome import core
+from esphome.components import binary_sensor, esp32, lock, sensor, text_sensor
 from esphome.const import (
     CONF_ADDRESS,
     CONF_ID,
@@ -26,7 +27,6 @@ from esphome.const import (
 )
 from esphome.core import CORE
 from esphome.cpp_generator import MockObjClass
-import esphome.final_validate as fv
 from esphome.types import ConfigType
 
 _LOGGER = logging.getLogger(__name__)
@@ -446,7 +446,7 @@ async def to_code(config):
     uuid = str(config[CONF_UUID]) if CONF_UUID in config else ""
     cg.add(var.init(config[CONF_MODEL], config[CONF_PUBLIC_KEY], config[CONF_SECRET], address, uuid))
 
-    cg.add_library("libsesame3bt", "libsesame3bt", "https://github.com/homy-newfs8/libsesame3bt#0.34.0")
+    cg.add_library("libsesame3bt", "libsesame3bt", "https://github.com/homy-newfs8/libsesame3bt#v0.50.0")
     # cg.add_library("libsesame3bt", None, "symlink://../../../../libsesame3bt")
     # cg.add_library("libsesame3bt-core", None, "symlink://../../../../libsesame3bt-core")
     # cg.add_library("libsesame3bt-server", None, "symlink://../../../../libsesame3bt-server")
