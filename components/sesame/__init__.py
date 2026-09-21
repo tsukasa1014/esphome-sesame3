@@ -172,16 +172,18 @@ def validate_standard_ble(config):
 FINAL_VALIDATE_SCHEMA = validate_standard_ble
 
 
-def is_hex_string(str, valid_len):
-    return len(str) == valid_len and all(c in string.hexdigits for c in str)
+def is_hex_string(value, valid_len):
+    return isinstance(value, str) and len(value) == valid_len and all(c in string.hexdigits for c in value)
 
 
 def valid_hexstring(key, valid_len):
-    def func(str):
-        if is_hex_string(str, valid_len):
-            return str
-        else:
-            raise cv.Invalid(f"'{key}' must be a {valid_len} bytes hex string")
+    def func(value):
+        if is_hex_string(value, valid_len):
+            return value
+        # A hex secret that happens to be all digits is read as a number by YAML
+        # unless it is quoted, which used to surface as a TypeError traceback.
+        hint = "" if isinstance(value, str) else " (quote it: an all-digit value is parsed as a number)"
+        raise cv.Invalid(f"'{key}' must be a {valid_len} bytes hex string{hint}")
 
     return func
 
