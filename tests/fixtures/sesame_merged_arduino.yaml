@@ -1,0 +1,103 @@
+# Same merged entrance node as sesame_merged.yaml, but on the Arduino framework
+# that the existing SESAME configuration uses. The NimBLE sdkconfig_options are
+# gone; only the framework type differs from the esp-idf fixture.
+substitutions:
+  phone_ibeacon_uuid: "111803AB-A74F-4120-B0D6-84BA3B63FD83"
+  phone_ibeacon_major: "41822"
+  phone_ibeacon_minor: "1"
+
+esphome:
+  name: sesame-merged-arduino-test
+  min_version: 2026.9.0
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  cpu_frequency: 240MHZ
+  toolchain: platformio
+  framework:
+    type: arduino
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+
+logger:
+
+api:
+
+wifi:
+  ssid: test-network
+  password: test-password
+
+esp32_ble:
+  max_connections: 5
+  use_psram: true
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            if (!x.get_ibeacon().has_value()) return;
+            auto beacon = x.get_ibeacon().value();
+            char uuidbuf[esphome::ble_device_base::UUID_STR_LEN];
+            if (strcmp(beacon.get_uuid().to_str(uuidbuf), "${phone_ibeacon_uuid}") != 0) {
+              return;
+            }
+            id(phone_ble_rssi).publish_state(x.get_rssi());
+
+bluetooth_proxy:
+  active: true
+  connection_slots: 2
+
+sensor:
+  - platform: template
+    name: "Phone BLE RSSI"
+    id: phone_ble_rssi
+    device_class: signal_strength
+    state_class: measurement
+    unit_of_measurement: dBm
+    accuracy_decimals: 0
+
+sesame:
+  - id: sesame1
+    model: sesame_5
+    address: E1:02:DB:3F:C2:85
+    secret: "00000000000000000000000000000000"
+    battery_pct:
+      name: "sesame1_battery_level"
+    connection_sensor:
+      name: "sesame1_connection_sensor"
+    lock:
+      id: lock_upper
+      name: lock_upper
+      fast_notify: true
+
+  - id: sesame2
+    model: sesame_5
+    address: D5:D8:4B:30:9A:02
+    secret: "00000000000000000000000000000001"
+    battery_pct:
+      name: "sesame2_battery_level"
+    connection_sensor:
+      name: "sesame2_connection_sensor"
+    lock:
+      id: lock_lower
+      name: lock_lower
+      fast_notify: true
+
+  - id: sesame_touch
+    model: sesame_touch
+    address: E7:A8:31:F1:D4:EA
+    secret: "00000000000000000000000000000002"
+    update_interval: 1h
+    battery_pct:
+      name: "touch_battery_level"
+    connection_sensor:
+      name: "touch_connection_sensor"

@@ -10,6 +10,8 @@ external_components:
   - source:
       type: git
       url: https://github.com/homy-newfs8/esphome-sesame3
+      # v0.32.0 is the first release with the standard BLE stack. Until the tag
+      # exists, use the branch that carries the change or a local path.
       ref: v0.32.0
     components: [sesame, sesame_ble]
   # - source: "components"

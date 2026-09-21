@@ -37,9 +37,14 @@ external_components:
   - source:
       type: git
       url: https://github.com/homy-newfs8/esphome-sesame3
-      ref: v0.31.0
+      ref: v0.32.0
     components: [ sesame, sesame_ble ]
 ```
+
+> [!NOTE]
+> `v0.32.0` is the first release with the ESPHome standard BLE stack. Until that
+> tag exists, point `ref` at the branch that carries the change (or at a local
+> checkout) instead of a version tag.
 
 # Build options
 

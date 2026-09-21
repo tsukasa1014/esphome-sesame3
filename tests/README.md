@@ -6,7 +6,9 @@ standard-BLE port by hand. All addresses, UUIDs and secrets in them are fake.
 | Fixture | What it covers |
 | --- | --- |
 | `sesame5.yaml` | Minimal single SESAME 5 with a lock, connection and battery sensors. |
+| `sesame_minimal_no_ble.yaml` | Upgrade path: only `sesame:` is declared. `esp32_ble`, `esp32_ble_tracker` and `esp32_ble_client` must be auto-loaded. |
 | `sesame_merged.yaml` | The merged entrance node: 2x SESAME 5 + 1x SESAME Touch, `esp32_ble_tracker` with an iBeacon presence lambda, `bluetooth_proxy` with 2 slots, PSRAM and `esp32_ble.max_connections: 5`. |
+| `sesame_merged_arduino.yaml` | The same merged node on `framework: type: arduino`, which the existing SESAME configuration uses. |
 | `reject_nimble_sdkconfig.yaml` | Must fail: `CONFIG_BT_NIMBLE_ENABLED: y` in `esp32.framework.sdkconfig_options`. |
 | `reject_too_few_connection_slots.yaml` | Must fail: 5 BLE clients with `esp32_ble.max_connections: 2`. |
 
@@ -39,3 +41,14 @@ reject_too_few_connection_slots.yaml
 After a successful build, `sdkconfig.<name>` in the build directory must contain
 `CONFIG_BT_BLUEDROID_ENABLED=y` and must not contain any `CONFIG_BT_NIMBLE_*` symbol.
 That is the check that the ESPHome stack is the only BLE backend in the image.
+
+## Results of the last run
+
+| Fixture | Framework | Result |
+| --- | --- | --- |
+| `sesame_merged.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 17.4% (56968/327680), Flash 14.1% (1146579/8126464) |
+| `sesame_merged_arduino.yaml` | arduino | SUCCESS, RAM 17.6% (57776/327680), Flash 15.0% (1222795/8126464) |
+
+Both images report `CONFIG_BT_BLUEDROID_ENABLED=y`, `# CONFIG_BT_NIMBLE_ENABLED is not set`,
+`CONFIG_BT_GATTC_ENABLE=y`, `CONFIG_MBEDTLS_CMAC_C=y`, and no warnings from the component
+under `-Wall -Wextra`.
