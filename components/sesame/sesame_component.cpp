@@ -107,6 +107,21 @@ void SesameComponent::disconnect() {
   ble_client_->disconnect();
 }
 
+// The parent client only guards DISCONNECTING. If the controller accepted an open
+// but never delivered OPEN/CONNECT/CLOSE, the client stays in CONNECTING with no
+// conn_id and neither disconnect() nor unconditional_disconnect() can free it.
+// Dropping it back to IDLE is what lets the tracker resume scanning and retry.
+bool SesameComponent::force_idle_if_unopened_() {
+  const auto client_state = ble_client_->state();
+  if (client_state != ClientState::CONNECTING && client_state != ClientState::DISCOVERED)
+    return false;
+  if (ble_client_->get_conn_id() != esp32_ble_client::UNSET_CONN_ID)
+    return false;
+  ESP_LOGW(TAG, "Link never opened; resetting the BLE client so scanning can resume");
+  ble_client_->set_state(ClientState::IDLE);  // also clears the pending disconnect
+  return true;
+}
+
 bool SesameComponent::write_to_tx(const uint8_t* data, size_t size) {
   if (!tx_handle_ || transport_failed_ || size == 0 || size > 20 || tx_count_ == TX_QUEUE_SIZE ||
       ble_client_->state() != ClientState::ESTABLISHED) {
@@ -223,16 +238,18 @@ void SesameComponent::loop() {
   const auto client_state = ble_client_->state();
   if (feature) feature->loop();
 
-  // A controller that accepted an open but never delivered its events leaves the
-  // parent client stuck in CONNECTING, which no state in this component can leave.
-  // Cycling the ESPHome BLE stack recovers that without rebooting the node, so the
-  // Wi-Fi, the API and the presence scanner keep running.
   if (ble_restart_pending_) {
-    if (esp32_ble::global_ble != nullptr &&
-        (!esp32_ble::global_ble->is_active() || now - ble_restart_started_ > BLE_RESTART_TIMEOUT_MS)) {
-      esp32_ble::global_ble->enable();
+    // ESP32BLE::enable() is a no-op unless the stack is DISABLED, and a failed
+    // bring-up leaves it OFF, so keep re-requesting until it is really back.
+    if (now - ble_restart_started_ > BLE_RESTART_RETRY_MS) {
+      ble_restart_started_ = now;
+      if (esp32_ble::global_ble != nullptr)
+        esp32_ble::global_ble->enable();
+    }
+    if (esp32_ble::global_ble != nullptr && esp32_ble::global_ble->is_active() &&
+        client_state != ClientState::INIT) {
       ble_restart_pending_ = false;
-      ESP_LOGW(TAG, "BLE stack re-enabled after repeated connection stalls");
+      ESP_LOGW(TAG, "BLE stack is back after repeated connection stalls");
     }
     return;
   }
@@ -247,16 +264,18 @@ void SesameComponent::loop() {
   // CLOSE_EVT, force the link closed and start a fresh attempt instead of waiting
   // forever in wait_disconnected.
   if (my_state == state_t::wait_disconnected && now - state_started > DISCONNECT_TIMEOUT_MS) {
-    if (client_state != ClientState::IDLE && client_state != ClientState::INIT) {
+    bool stalled = force_idle_if_unopened_();
+    if (!stalled && ble_client_->state() != ClientState::IDLE && ble_client_->state() != ClientState::INIT) {
       ESP_LOGW(TAG, "Disconnect did not complete; forcing the link closed");
       ble_client_->unconditional_disconnect();
-      if (++stuck_cycles_ >= MAX_STUCK_CYCLES && esp32_ble::global_ble != nullptr) {
-        stuck_cycles_ = 0;
-        ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack");
-        esp32_ble::global_ble->disable();
-        ble_restart_pending_ = true;
-        ble_restart_started_ = now;
-      }
+      stalled = true;
+    }
+    if (stalled && ++stuck_cycles_ >= MAX_STUCK_CYCLES && esp32_ble::global_ble != nullptr) {
+      stuck_cycles_ = 0;
+      ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack");
+      esp32_ble::global_ble->disable();
+      ble_restart_pending_ = true;
+      ble_restart_started_ = now;
     }
     reset_session_();
     set_state(state_t::not_connected);
@@ -279,6 +298,7 @@ void SesameComponent::loop() {
   }
   if (my_state == state_t::connecting && now - state_started > connection_timeout) {
     ESP_LOGW(TAG, "Connection/discovery timeout");
+    force_idle_if_unopened_();
     disconnect();  // Standard client defers close if the controller is still opening.
     return;
   }

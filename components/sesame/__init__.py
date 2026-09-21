@@ -11,6 +11,7 @@ from esphome.const import (
     CONF_MODEL,
     CONF_TAG,
     CONF_TIMEOUT,
+    CONF_UPDATE_INTERVAL,
     CONF_UUID,
     DEVICE_CLASS_BATTERY,
     DEVICE_CLASS_CONNECTIVITY,
@@ -19,6 +20,7 @@ from esphome.const import (
     DEVICE_CLASS_VOLTAGE,
     STATE_CLASS_MEASUREMENT,
     STATE_CLASS_NONE,
+    SCHEDULER_DONT_RUN,
     UNIT_EMPTY,
     UNIT_PERCENT,
     UNIT_VOLT,
@@ -203,6 +205,11 @@ def validate_always_connect(config: ConfigType) -> ConfigType:
     if not config[CONF_ALWAYS_CONNECT]:
         if CONF_LOCK in config or CONF_BOT in config:
             raise cv.Invalid("When using `lock` or `bot`, `always_connect` must be True")
+        if config[CONF_UPDATE_INTERVAL].total_milliseconds == SCHEDULER_DONT_RUN:
+            _LOGGER.warning(
+                "always_connect: false only connects when update_interval fires, so this "
+                "entry will never connect while update_interval is `never`"
+            )
     return config
 
 

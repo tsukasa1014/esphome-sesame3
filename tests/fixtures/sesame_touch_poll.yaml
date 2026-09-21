@@ -1,0 +1,36 @@
+# SESAME Touch in polling mode: connect on the update_interval, read the status,
+# then disconnect again. `always_connect: false` is only useful together with an
+# `update_interval`, which the component warns about when it is missing.
+esphome:
+  name: sesame-touch-poll-test
+  min_version: 2026.9.0
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  toolchain: platformio
+  framework:
+    type: esp-idf
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+logger:
+api:
+wifi:
+  ssid: test-network
+  password: test-password
+esp32_ble:
+  max_connections: 5
+esp32_ble_tracker:
+sesame:
+  - id: sesame_touch
+    model: sesame_touch
+    uuid: "01020304-0102-0102-0102-010203040506"
+    secret: "00000000000000000000000000000000"
+    always_connect: false
+    update_interval: 12h
+    battery_pct:
+      name: Touch battery
+    connection_sensor:
+      name: Touch connection

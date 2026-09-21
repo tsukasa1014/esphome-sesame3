@@ -99,9 +99,11 @@ sesame:
 ```
 
 Scan parameters are shared by every component that uses the tracker. A
-continuous 320ms/320ms scan (100% radio duty) still leaves connections usable,
-but a lower duty cycle such as `interval: 320ms` with `window: 160ms` gives
-the connected SESAME devices more air time when several are connected at once.
+continuous 320ms/320ms scan (100% radio duty) is what the BLE presence setups
+usually use; ESPHome then automatically falls back to `connection_scan_window`
+(default 30ms) while a GATT connection is active, so connected SESAME devices
+keep most of the air time. Set `connection_scan_window` explicitly only when you
+want a different split, and keep it smaller than `window`.
 
 
 # Configure for your SESAME
