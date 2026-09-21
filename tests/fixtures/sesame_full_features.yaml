@@ -1,0 +1,99 @@
+# Exercises the option surface the existing configurations use, so the codegen
+# paths a merged node depends on are actually built:
+#   - OS3 lock with every history_* and all_history_* sensor
+#   - OS3 Bot with a running_sensor
+# OS2 devices (public_key + address) are not covered here; that code path is
+# untouched by the standard-BLE port (validate_pubkey and the OS2 address rules
+# are unchanged from v0.31.0).
+esphome:
+  name: sesame-full-features-test
+  min_version: 2026.9.0
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  toolchain: platformio
+  framework:
+    type: esp-idf
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+logger:
+api:
+wifi:
+  ssid: test-network
+  password: test-password
+esp32_ble:
+  max_connections: 5
+esp32_ble_tracker:
+sesame:
+  - id: sesame1
+    model: sesame_5
+    uuid: "01020304-0102-0102-0102-010203040506"
+    secret: "00000000000000000000000000000000"
+    timeout: 10s
+    connect_retry_limit: 3
+    battery_pct:
+      name: "sesame1_battery_level"
+    battery_voltage:
+      name: "sesame1_battery_voltage"
+    battery_critical:
+      name: "sesame1_battery_critical"
+    connection_sensor:
+      name: "sesame1_connection_sensor"
+    lock:
+      id: lock_1
+      name: Lock1
+      tag: "My awesome system"
+      fast_notify: true
+      unknown_state_alternative: JAMMED
+      unknown_state_timeout: 20s
+      history_tag:
+        id: sesame1_history_tag
+        name: "sesame1_history_tag"
+      history_type:
+        id: sesame1_history_type
+        name: "sesame1_history_type"
+      history_tag_type:
+        id: sesame1_trigger_type
+        name: "sesame1_trigger_type"
+      history_scaled_voltage:
+        id: sesame1_history_scaled_voltage
+        name: "sesame1_history_scaled_voltage"
+      history_battery_pct:
+        id: sesame1_history_battery_pct
+        name: "sesame1_history_battery_pct"
+      history_scaled_voltage2:
+        id: sesame1_history_scaled_voltage2
+        name: "sesame1_history_scaled_voltage2"
+      history_battery_pct2:
+        id: sesame1_history_battery_pct2
+        name: "sesame1_history_battery_pct2"
+      history_extra:
+        id: sesame1_history_extra
+        name: "sesame1_history_extra"
+      all_history_tag:
+        id: sesame1_all_history_tag
+        name: "sesame1_all_history_tag"
+      all_history_type:
+        id: sesame1_all_history_type
+        name: "sesame1_all_history_type"
+      all_history_tag_type:
+        id: sesame1_all_history_tag_type
+        name: "sesame1_all_history_tag_type"
+
+  - id: bot2
+    model: sesame_bot_2
+    uuid: "01020304-0102-0102-0102-010203040507"
+    secret: "00000000000000000000000000000001"
+    battery_pct:
+      name: "bot2_battery_level"
+    battery_voltage:
+      name: "bot2_battery_voltage"
+    bot:
+      id: bot_2
+      running_sensor:
+        name: "bot2_running"
+    connection_sensor:
+      name: "bot2_connection_sensor"
