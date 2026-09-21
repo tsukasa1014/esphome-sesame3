@@ -1,108 +1,303 @@
 #include "sesame_component.h"
-#include <esphome/core/application.h>
 #include <esphome/core/log.h>
+#include <libsesame3bt/ServerCore.h>
+#include <libsesame3bt/util.h>
 #include <algorithm>
-#if __has_include("../sesame_server/sesame_server_component.h")
-#include "../sesame_server/sesame_server_component.h"
-#else
-namespace esphome::sesame_server {
 
-class SesameServerComponent {
- public:
-	void disconnect(const NimBLEAddress& address) {}
-	bool has_session(const NimBLEAddress& address) const { return false; }
-	bool has_trigger(const NimBLEAddress& address) const { return false; }
-	void start_advertising() {}
-	void stop_advertising() {}
-};
-
-}  // namespace esphome::sesame_server
+#if defined(CONFIG_BT_NIMBLE_ENABLED) && CONFIG_BT_NIMBLE_ENABLED
+#error "sesame requires ESPHome standard BLE; remove NimBLE sdkconfig options"
+#endif
+#if LIBSESAME3BTCORE_DEBUG
+#error "Disable LIBSESAME3BTCORE_DEBUG: protocol debug can expose decrypted payloads"
 #endif
 
-namespace {
-
-constexpr uint32_t CONNECT_RETRY_INTERVAL = 3'000;
-constexpr uint32_t CONNECT_STATE_TIMEOUT_MARGIN = 5'000;
-constexpr uint32_t AUTHENTICATE_TIMEOUT = 5'000;
-constexpr uint32_t REBOOT_DELAY_MSEC = 5'000;
-constexpr uint32_t SERVER_DISCONNECT_WAIT_TIMEOUT_MSEC = 5'000;
-constexpr uint32_t DISCONNECT_TIMEOUT_MSEC = 10'000;
-
-constexpr const char* STATIC_TAG = "sesame_lock";
-
-}  // namespace
-
 using libsesame3bt::Sesame;
-using libsesame3bt::SesameClient;
-using model_t = Sesame::model_t;
+using libsesame3bt::core::result_t;
+using esphome::esp32_ble_tracker::ClientState;
+using esphome::esp32_ble::ESPBTUUID;
 
-namespace esphome {
-namespace sesame_lock {
+namespace esphome::sesame_lock {
 
-void
-SesameComponent::global_init() {
-	if (global_initialized) {
-		return;
-	}
-	connect_queue.reserve(instance_count);
-	global_initialized = true;
+SesameComponent::SesameComponent(const char* id) : log_tag_string(id) {
+  TAG = log_tag_string.c_str();
 }
 
-SesameComponent::SesameComponent(const char* id) {
-	log_tag_string = id;
-	TAG = log_tag_string.c_str();
-	++instance_count;
+void SesameComponent::init(Sesame::model_t model, std::string_view pubkey,
+                           std::string_view secret, std::string_view btaddr, std::string_view uuid) {
+  uint64_t address = 0;
+  std::string hex;
+  auto input = btaddr.empty() ? uuid : btaddr;
+  for (char c : input) {
+    if (c != '-' && c != ':') hex.push_back(c);
+  }
+  if (!btaddr.empty()) {
+    std::byte bytes[6];
+    if (!libsesame3bt::core::util::hex2bin(hex, bytes)) {
+      mark_failed();
+      return;
+    }
+    for (auto b : bytes) address = (address << 8) | std::to_integer<uint8_t>(b);
+  } else {
+    std::byte bytes[16];
+    if (!libsesame3bt::core::util::hex2bin(hex, bytes)) {
+      mark_failed();
+      return;
+    }
+    // Core's UUID and returned address are both big endian. Do not use NimBLE byte order.
+    for (auto b : libsesame3bt::core::SesameServerCore::uuid_to_ble_address(bytes))
+      address = (address << 8) | std::to_integer<uint8_t>(b);
+  }
+  if (!address || sesame.begin(model) != result_t::success || sesame.set_keys(pubkey, secret) != result_t::success) {
+    ESP_LOGE(TAG, "Invalid device configuration or keys");
+    mark_failed();
+    return;
+  }
+  ble_client_->set_address(address);
+  // Advertisements supply the actual address type before the tracker connects.
+  ble_client_->set_remote_addr_type(BLE_ADDR_TYPE_RANDOM);
+  sesame.set_status_callback([this](auto&, const auto& status) {
+    sesame_status = status;
+    status_pending_ = true;
+  });
 }
 
-void
-SesameComponent::init(model_t model,
-                      std::string_view pubkey,
-                      std::string_view secret,
-                      std::string_view btaddr,
-                      std::string_view uuid) {
-	sesame.set_connect_timeout(connection_timeout);
-	if (!btaddr.empty()) {
-		ble_address = NimBLEAddress(std::string{btaddr}, BLE_ADDR_RANDOM);
-		if (!sesame.begin(ble_address, model)) {
-			ESP_LOGE(TAG, "Failed to SesameClient::begin. May be unsupported model.");
-			mark_failed();
-			return;
-		}
-	} else if (uuid.empty()) {
-		ESP_LOGE(TAG, "Either btaddr or uuid is required.");
-		mark_failed();
-		return;
-	} else {
-		if (!sesame.begin(NimBLEUUID{std::string{uuid}}, model)) {
-			ESP_LOGE(TAG, "Failed to SesameClient::begin with uuid. May be unsupported model.");
-			mark_failed();
-			return;
-		}
-	}
-	if (!sesame.set_keys(pubkey, secret)) {
-		ESP_LOGE(TAG, "Failed to set keys. Invalid pubkey or secret.");
-		mark_failed();
-		return;
-	}
-	sesame.set_status_callback([this](auto& client, auto status) {
-		ESP_LOGD(TAG, "Status in_lock=%u,in_unlock=%u,tgt=%d,pos=%d,mot=%u,ret=%u", status.in_lock(), status.in_unlock(),
-		         status.target(), status.position(), static_cast<uint8_t>(status.motor_status()), status.ret_code());
-		sesame_status = status;
-		defer([this]() {
-			operation_requested.update_status = false;
-			reflect_sesame_status();
-		});
-	});
-	set_state(state_t::not_connected);
+void SesameComponent::setup() {
+  if (feature) feature->publish_initial_state();
+  publish_connection_state(false);
 }
 
-void
-SesameComponent::setup() {
-	global_init();
-	if (feature) {
-		feature->publish_initial_state();
-	}
-	BLEDevice::init("");
+void SesameComponent::set_state(state_t next) {
+  if (my_state == next) return;
+  my_state = next;
+  state_started = millis();
+}
+
+void SesameComponent::reset_session_() {
+  sesame.on_disconnected();
+  tx_head_ = tx_count_ = 0;
+  write_pending_ = subscribed_ = status_pending_ = transport_failed_ = false;
+  tx_handle_ = rx_handle_ = cccd_handle_ = 0;
+  ble_client_->set_node_ready(false);
+  // Queue may contain authentication material; clear it even though it is no longer scheduled.
+  for (auto& fragment : tx_queue_) fragment = {};
+  make_unknown();
+  publish_connection_state(false);
+}
+
+void SesameComponent::schedule_retry_() {
+  ble_client_->set_auto_connect(false);
+  reset_session_();
+  if (connect_tried < UINT16_MAX) ++connect_tried;
+  uint32_t base = 3000U << std::min<unsigned>(connect_tried - 1, 4);
+  retry_delay_ = std::min<uint32_t>(base, 60000) + (ble_client_->get_address() % 997);
+  // Preserve the option as a retry-burst limit; never reboot every component for one missing lock.
+  if (connect_limit && connect_tried >= connect_limit) {
+    retry_delay_ = 60000;
+    connect_tried = 0;
+  }
+  retry_started_ = millis();
+  set_state(state_t::not_connected);
+}
+
+void SesameComponent::disconnect() {
+  ble_client_->set_auto_connect(false);
+  reset_session_();
+  set_state(state_t::wait_disconnected);
+  ble_client_->disconnect();
+}
+
+bool SesameComponent::write_to_tx(const uint8_t* data, size_t size) {
+  if (!tx_handle_ || transport_failed_ || size == 0 || size > 20 || tx_count_ == TX_QUEUE_SIZE ||
+      ble_client_->state() != ClientState::ESTABLISHED) {
+    transport_failed_ = true;
+    return false;
+  }
+  auto& fragment = tx_queue_[(tx_head_ + tx_count_) % TX_QUEUE_SIZE];
+  std::copy_n(data, size, fragment.data.begin());
+  fragment.size = size;
+  ++tx_count_;
+  return true;
+}
+
+void SesameComponent::pump_tx_() {
+  if (write_pending_ || tx_count_ == 0 || transport_failed_) return;
+  auto& fragment = tx_queue_[tx_head_];
+  auto rc = esp_ble_gattc_write_char(ble_client_->get_gattc_if(), ble_client_->get_conn_id(),
+                                    tx_handle_, fragment.size, fragment.data.data(),
+                                    ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+  if (rc != ESP_OK) {
+    ESP_LOGW(TAG, "BLE write could not be queued (%d)", rc);
+    transport_failed_ = true;
+    return;
+  }
+  write_pending_ = true;
+  write_started_ = millis();
+}
+
+void SesameComponent::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t,
+                                          esp_ble_gattc_cb_param_t* param) {
+  // BLEClientBase filters by GATT interface, peer and connection before dispatching here.
+  switch (event) {
+    case ESP_GATTC_SEARCH_CMPL_EVT: {
+      if (param->search_cmpl.status != ESP_GATT_OK || my_state == state_t::wait_disconnected) {
+        transport_failed_ = true;
+        break;
+      }
+      const auto service = ESPBTUUID::from_raw(Sesame::SESAME3_SRV_UUID);
+      auto* tx = ble_client_->get_characteristic(service, ESPBTUUID::from_raw(Sesame::TxUUID));
+      auto* rx = ble_client_->get_characteristic(service, ESPBTUUID::from_raw(Sesame::RxUUID));
+      if (!tx || !rx || !(tx->properties & ESP_GATT_CHAR_PROP_BIT_WRITE_NR) ||
+          !(rx->properties & ESP_GATT_CHAR_PROP_BIT_NOTIFY)) {
+        ESP_LOGW(TAG, "SESAME TX/RX characteristics missing or unsupported");
+        transport_failed_ = true;
+        break;
+      }
+      auto* cccd = rx->get_descriptor(ESP_GATT_UUID_CHAR_CLIENT_CONFIG);
+      if (!cccd) {
+        ESP_LOGW(TAG, "SESAME notification descriptor missing");
+        transport_failed_ = true;
+        break;
+      }
+      tx_handle_ = tx->handle;
+      rx_handle_ = rx->handle;
+      cccd_handle_ = cccd->handle;
+      set_state(state_t::authenticating);
+      // Parent writes CCCD after registration. Keep its cache until that write completes.
+      if (ble_client_->register_for_notify(rx_handle_) != ESP_OK) transport_failed_ = true;
+      break;
+    }
+    case ESP_GATTC_REG_FOR_NOTIFY_EVT:
+      if (param->reg_for_notify.handle == rx_handle_ && param->reg_for_notify.status != ESP_GATT_OK)
+        transport_failed_ = true;
+      break;
+    case ESP_GATTC_WRITE_DESCR_EVT:
+      if (param->write.handle == cccd_handle_) {
+        if (param->write.status != ESP_GATT_OK) {
+          transport_failed_ = true;
+        } else {
+          subscribed_ = true;
+          ble_client_->set_node_ready(true);
+        }
+      }
+      break;
+    case ESP_GATTC_NOTIFY_EVT:
+      if (param->notify.handle == rx_handle_ && param->notify.is_notify &&
+          (my_state == state_t::authenticating || my_state == state_t::running) && !transport_failed_) {
+        // The initial token may arrive before the local CCCD completion event.
+        auto result = sesame.on_received(reinterpret_cast<const std::byte*>(param->notify.value),
+                                         param->notify.value_len);
+        if (result != result_t::success) {
+          ESP_LOGW(TAG, "SESAME protocol error (%u)", static_cast<unsigned>(result));
+          transport_failed_ = true;
+        }
+      }
+      break;
+    case ESP_GATTC_WRITE_CHAR_EVT:
+      if (param->write.handle == tx_handle_ && write_pending_) {
+        if (param->write.status != ESP_GATT_OK) {
+          transport_failed_ = true;
+        } else {
+          tx_queue_[tx_head_] = {};
+          tx_head_ = (tx_head_ + 1) % TX_QUEUE_SIZE;
+          --tx_count_;
+          write_pending_ = false;
+        }
+      }
+      break;
+    case ESP_GATTC_DISCONNECT_EVT:
+    case ESP_GATTC_CLOSE_EVT:
+      if (my_state != state_t::not_connected && my_state != state_t::wait_disconnected) {
+        reset_session_();
+        ble_client_->set_auto_connect(false);
+        set_state(state_t::wait_disconnected);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void SesameComponent::loop() {
+  const auto now = millis();
+  const auto client_state = ble_client_->state();
+  if (feature) feature->loop();
+
+  // Also handles stack disable/re-enable and the parent's lost CLOSE_EVT recovery.
+  if ((client_state == ClientState::IDLE || client_state == ClientState::INIT) &&
+      my_state != state_t::not_connected) {
+    schedule_retry_();
+    return;
+  }
+  if (transport_failed_ || (write_pending_ && now - write_started_ > 5000)) {
+    ESP_LOGW(TAG, "Transport failed; resetting connection");
+    disconnect();
+    return;
+  }
+  if (my_state == state_t::not_connected) {
+    if (client_state == ClientState::CONNECTING || client_state == ClientState::CONNECTED ||
+        client_state == ClientState::ESTABLISHED) {
+      set_state(state_t::connecting);
+    } else {
+      const bool requested = always_connect || operation_requested.update_status;
+      ble_client_->set_auto_connect(requested && now - retry_started_ >= retry_delay_);
+      return;  // Advertisements + tracker schedule connection attempts.
+    }
+  }
+  if (my_state == state_t::connecting && now - state_started > connection_timeout) {
+    ESP_LOGW(TAG, "Connection/discovery timeout");
+    disconnect();  // Standard client defers close if the controller is still opening.
+    return;
+  }
+  if (my_state == state_t::authenticating) {
+    if (subscribed_ && sesame.is_session_active()) {
+      connect_tried = 0;
+      retry_delay_ = 0;
+      set_state(state_t::running);
+      publish_connection_state(true);
+      ESP_LOGI(TAG, "Authenticated");
+      // Touch login need not contain status. Poll once even when update_interval is never.
+      if (!sesame.request_status()) transport_failed_ = true;
+    } else if (now - state_started > connection_timeout) {
+      ESP_LOGW(TAG, "Notification/authentication timeout");
+      disconnect();
+      return;
+    }
+  }
+  if (status_pending_) {
+    status_pending_ = false;
+    operation_requested.update_status = false;
+    reflect_sesame_status();
+  }
+  if (my_state == state_t::running) {
+    if (!sesame.is_session_active()) {
+      disconnect();
+      return;
+    }
+    if (!always_connect && !operation_requested.update_status && sesame_status.has_value() &&
+        tx_count_ == 0 && !write_pending_) {
+      disconnect();
+      return;
+    }
+  }
+  if (my_state == state_t::authenticating || my_state == state_t::running) pump_tx_();
+}
+
+void SesameComponent::update() {
+  operation_requested.update_status = true;
+  if (my_state == state_t::running && !sesame.request_status()) {
+    ESP_LOGW(TAG, "Failed to request status");
+    transport_failed_ = true;
+  }
+}
+
+void SesameComponent::publish_connection_state(bool connected) {
+  if (connection_sensor && (!connection_sensor->has_state() || connection_sensor->state != connected))
+    connection_sensor->publish_state(connected);
+}
+
+void SesameComponent::make_unknown() {
+  sesame_status.reset();
+  reflect_sesame_status();
 }
 
 void
@@ -145,231 +340,5 @@ SesameComponent::reflect_sesame_status() {
 	}
 }
 
-void
-SesameComponent::set_state(state_t next_state) {
-	if (my_state == next_state) {
-		return;
-	}
-	if (my_state == state_t::wait_reboot) {
-		return;
-	}
-	my_state = next_state;
-	if (my_state == state_t::not_connected) {
-		if (server && server->has_trigger(ble_address)) {
-			server->start_advertising();
-			ESP_LOGD(TAG, "Advertising restarted");
-		}
-	}
-	state_started = esphome::millis();
-}
 
-void
-SesameComponent::disconnect() {
-	sesame.disconnect();
-	sesame_status.reset();
-	set_state(state_t::wait_disconnected);
-	ESP_LOGI(TAG, "Disconnecting");
-}
-
-void
-SesameComponent::loop() {
-	auto now = esphome::millis();
-	if (feature) {
-		feature->loop();
-	}
-	switch (my_state) {
-		case state_t::not_connected:
-			publish_connection_state(false);
-			if (connect_limit && connect_tried >= connect_limit) {
-				ESP_LOGE(TAG, "Cannot connect %d times, reboot after %lu secs", connect_tried, REBOOT_DELAY_MSEC / 1'000);
-				set_state(state_t::wait_reboot);
-				break;
-			}
-			if (always_connect || operation_requested.value != 0) {
-				if (!last_connect_attempted || now - last_connect_attempted >= CONNECT_RETRY_INTERVAL) {
-					last_connect_attempted = now;
-					enqueue_connect(this);
-					set_state(state_t::wait_connect_turn);
-				}
-			}
-			break;
-		case state_t::wait_connect_turn:
-			if (can_connect(this)) {
-				ESP_LOGD(TAG, "My turn to connect");
-				if (server && server->has_trigger(ble_address)) {
-					server->stop_advertising();
-					if (server->has_session(ble_address)) {
-						ESP_LOGD(TAG, "Disconnecting from server");
-						server->disconnect(ble_address);
-					}
-					set_state(state_t::wait_server_disconnect);
-				} else {
-					++connect_tried;
-					if (sesame.connect_async()) {
-						set_state(state_t::connecting);
-					} else {
-						ESP_LOGW(TAG, "Failed to start connect rc=%d", get_last_error());
-						connect_done(this);
-						set_state(state_t::not_connected);
-					}
-				}
-			}
-			break;
-		case state_t::wait_server_disconnect:
-			if (now - state_started > SERVER_DISCONNECT_WAIT_TIMEOUT_MSEC) {
-				ESP_LOGW(TAG, "Disconnect from server not finished");
-				connect_done(this);
-				set_state(state_t::not_connected);
-				break;
-			}
-			if (server && !server->has_session(ble_address)) {
-				ESP_LOGD(TAG, "Server disconnected");
-				++connect_tried;
-				if (sesame.connect_async()) {
-					set_state(state_t::connecting);
-				} else {
-					ESP_LOGW(TAG, "Failed to start connect rc=%d", get_last_error());
-					connect_done(this);
-					set_state(state_t::not_connected);
-				}
-			}
-			break;
-		case state_t::connecting:
-			if (now - state_started > connection_timeout + CONNECT_STATE_TIMEOUT_MARGIN) {
-				ESP_LOGE(TAG, "Connect timeout not occurred within expected time, reboot after %lu secs", REBOOT_DELAY_MSEC / 1'000);
-				disconnect();
-				connect_done(this);
-				set_state(state_t::wait_reboot);
-				break;
-			}
-			if (server && server->has_trigger(ble_address) && server->has_session(ble_address)) {
-				ESP_LOGD(TAG, "Connected to server during connecting, try again");
-				disconnect();
-				connect_done(this);
-				break;
-			}
-			if (sesame.get_state() == SesameClient::state_t::connected) {
-				ESP_LOGI(TAG, "Connected");
-				connect_done(this);
-				if (sesame.start_authenticate()) {
-					set_state(state_t::authenticating);
-				} else {
-					ESP_LOGW(TAG, "Failed to start authenticate, rc=%d", get_last_error());
-					make_unknown();
-					disconnect();
-				}
-			} else if (sesame.get_state() != SesameClient::state_t::connecting) {
-				ESP_LOGW(TAG, "Failed to connect, rc=%d", get_last_error());
-				connect_done(this);
-				make_unknown();
-				disconnect();
-			}
-			break;
-		case state_t::authenticating:
-			if (sesame.get_state() == SesameClient::state_t::active) {
-				connect_tried = 0;
-				last_connect_attempted = 0;
-				set_state(state_t::running);
-				publish_connection_state(true);
-				ESP_LOGI(TAG, "Authenticated");
-			} else if ((sesame.get_state() != SesameClient::state_t::connected &&
-			            sesame.get_state() != SesameClient::state_t::authenticating) ||
-			           now - state_started > AUTHENTICATE_TIMEOUT) {
-				ESP_LOGW(TAG, "Failed to authenticate");
-				make_unknown();
-				disconnect();
-			}
-			break;
-		case state_t::running:
-			if (!always_connect && operation_requested.value == 0) {
-				disconnect();
-			} else if (sesame.get_state() != SesameClient::state_t::active) {
-				make_unknown();
-				disconnect();
-			}
-			break;
-		case state_t::wait_disconnected:
-			if (now - state_started > DISCONNECT_TIMEOUT_MSEC) {
-				ESP_LOGE(TAG, "Cannot disconnect for %lu seconds, reboot after %lu secs", DISCONNECT_TIMEOUT_MSEC / 1'000,
-				         REBOOT_DELAY_MSEC / 1'000);
-				set_state(state_t::wait_reboot);
-				break;
-			} else if (sesame.get_state() == SesameClient::state_t::idle) {
-				set_state(state_t::not_connected);
-				break;
-			}
-			break;
-		case state_t::wait_reboot:
-			if (now - state_started > REBOOT_DELAY_MSEC) {
-				mark_failed();
-				App.safe_reboot();
-			}
-			break;
-	}
-}
-
-void
-SesameComponent::publish_connection_state(bool connected) {
-	if (connection_sensor) {
-		connection_sensor->publish_state(connected);
-	}
-}
-
-bool
-SesameComponent::enqueue_connect(SesameComponent* client) {
-	std::lock_guard lock(ble_connecting_mux);
-	connect_queue.push_back(client);
-	return connect_queue.front() == client;
-}
-
-void
-SesameComponent::connect_done(SesameComponent* client) {
-	std::lock_guard lock(ble_connecting_mux);
-	if (client == connect_queue.front()) {
-		connect_queue.erase(std::cbegin(connect_queue));
-		return;
-	}
-	ESP_LOGD(STATIC_TAG, "Connection queue mishandled");
-	(void)std::remove(std::begin(connect_queue), std::end(connect_queue), client);
-	return;
-}
-
-bool
-SesameComponent::can_connect(SesameComponent* client) {
-	std::lock_guard lock(ble_connecting_mux);
-	return client == connect_queue.front();
-}
-
-static bool
-is_central_model(Sesame::model_t model) {
-	return model == Sesame::model_t::sesame_touch || model == Sesame::model_t::sesame_touch_pro || model == Sesame::model_t::remote ||
-	       model == Sesame::model_t::remote_nano || model == Sesame::model_t::open_sensor_1;
-}
-
-void
-SesameComponent::update() {
-	if (my_state == state_t::running) {
-		if (!sesame.request_status()) {
-			ESP_LOGW(TAG, "Failed to request status");
-		}
-	} else if (my_state == state_t::not_connected) {
-		if (is_central_model(sesame.get_model()) && server) {
-			if (server->has_session(ble_address)) {
-				ESP_LOGD(TAG, "Disconnecting from server");
-				server->disconnect(ble_address);
-			}
-		}
-		operation_requested.update_status = true;
-	} else {
-		ESP_LOGD(TAG, "Skipping update in state %d", static_cast<int>(my_state));
-	}
-}
-
-void
-SesameComponent::make_unknown() {
-	sesame_status.reset();
-	reflect_sesame_status();
-}
-
-}  // namespace sesame_lock
-}  // namespace esphome
+}  // namespace esphome::sesame_lock

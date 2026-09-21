@@ -1,8 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import esp32, esp32_ble_tracker
+from esphome.components import esp32_ble_tracker
 from esphome.const import CONF_ID
-from esphome.core import CORE
 
 DEPENDENCIES = ["esp32_ble_tracker"]
 AUTO_LOAD = ["esp32_ble_tracker"]
@@ -20,8 +19,4 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await esp32_ble_tracker.register_ble_device(var, config)
-    cg.add_library("libsesame3bt", None, "https://github.com/homy-newfs8/libsesame3bt#v0.50.0")
-
-    if not CORE.using_arduino:
-        esp32.add_idf_component(name="h2zero/esp-nimble-cpp", ref="~2.5.0")
-        CORE.add_platformio_option("lib_ignore", "NimBLE-Arduino")
+    cg.add_library("libsesame3bt-core", None, "https://github.com/homy-newfs8/libsesame3bt-core#v0.50.0")

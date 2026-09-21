@@ -1,0 +1,159 @@
+# Merge target: esphome2sesame.yaml (phone iBeacon presence) + esphome3sesame.yaml
+# (2x SESAME 5 + 1x SESAME Touch) on one ESP32-S3 N16R8.
+#
+# Every address, secret and UUID here is a placeholder.
+substitutions:
+  phone_ibeacon_uuid: "111803AB-A74F-4120-B0D6-84BA3B63FD83"
+  phone_ibeacon_major: "41822"
+  phone_ibeacon_minor: "1"
+
+esphome:
+  name: sesame-merged-test
+  friendly_name: "Entrance BLE"
+  min_version: 2026.9.0
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(phone_nearby).publish_state(false);
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  cpu_frequency: 240MHz
+  toolchain: platformio
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+
+logger:
+  level: DEBUG
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: test-network
+  password: test-password
+  power_save_mode: none
+
+esp32_ble:
+  max_connections: 2
+  use_psram: true
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 320ms
+    window: 320ms
+    active: false
+    continuous: true
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            if (!x.get_ibeacon().has_value()) return;
+            auto beacon = x.get_ibeacon().value();
+            char uuidbuf[esphome::ble_device_base::UUID_STR_LEN];
+            if (strcmp(beacon.get_uuid().to_str(uuidbuf), "${phone_ibeacon_uuid}") != 0 ||
+                beacon.get_major() != ${phone_ibeacon_major} ||
+                beacon.get_minor() != ${phone_ibeacon_minor}) {
+              return;
+            }
+            id(phone_last_seen_ms) = millis();
+            id(phone_ble_rssi).publish_state(x.get_rssi());
+            if (!id(phone_nearby).state) {
+              id(phone_nearby).publish_state(true);
+            }
+
+bluetooth_proxy:
+  active: true
+  connection_slots: 2
+
+globals:
+  - id: phone_last_seen_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+binary_sensor:
+  - platform: template
+    name: "Phone BLE nearby"
+    id: phone_nearby
+    device_class: presence
+
+sensor:
+  - platform: template
+    name: "Phone BLE RSSI"
+    id: phone_ble_rssi
+    device_class: signal_strength
+    state_class: measurement
+    unit_of_measurement: dBm
+    accuracy_decimals: 0
+    icon: mdi:bluetooth
+
+interval:
+  - interval: 5s
+    then:
+      - lambda: |-
+          if (id(phone_nearby).state && (millis() - id(phone_last_seen_ms) > 15000UL)) {
+            id(phone_nearby).publish_state(false);
+          }
+
+sesame:
+  - id: sesame1
+    model: sesame_5
+    address: E1:02:DB:3F:C2:85
+    secret: "00000000000000000000000000000000"
+    battery_pct:
+      name: "sesame1_battery_level"
+    battery_voltage:
+      name: "sesame1_battery_voltage"
+    battery_critical:
+      name: "sesame1_battery_critical"
+    connection_sensor:
+      name: "sesame1_connection_sensor"
+    lock:
+      id: lock_upper
+      name: lock_upper
+      fast_notify: true
+
+  - id: sesame2
+    model: sesame_5
+    address: D5:D8:4B:30:9A:02
+    secret: "00000000000000000000000000000001"
+    battery_pct:
+      name: "sesame2_battery_level"
+    battery_voltage:
+      name: "sesame2_battery_voltage"
+    battery_critical:
+      name: "sesame2_battery_critical"
+    connection_sensor:
+      name: "sesame2_connection_sensor"
+    lock:
+      id: lock_lower
+      name: lock_lower
+      fast_notify: true
+
+  - id: sesame_touch
+    model: sesame_touch
+    address: E7:A8:31:F1:D4:EA
+    secret: "00000000000000000000000000000002"
+    update_interval: 1h
+    battery_pct:
+      name: "touch_battery_level"
+    battery_voltage:
+      name: "touch_battery_voltage"
+    battery_critical:
+      name: "touch_battery_critical"
+    connection_sensor:
+      name: "touch_connection_sensor"

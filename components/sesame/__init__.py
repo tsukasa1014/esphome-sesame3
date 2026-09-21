@@ -2,11 +2,9 @@ import logging
 import string
 
 import esphome.codegen as cg
-import esphome.config as esp_config
 import esphome.config_validation as cv
 import esphome.final_validate as fv
-from esphome import core
-from esphome.components import binary_sensor, esp32, lock, sensor, text_sensor
+from esphome.components import binary_sensor, esp32, esp32_ble, esp32_ble_client, esp32_ble_tracker, lock, sensor, text_sensor
 from esphome.const import (
     CONF_ADDRESS,
     CONF_ID,
@@ -26,14 +24,13 @@ from esphome.const import (
     UNIT_VOLT,
 )
 from esphome.core import CORE
-from esphome.cpp_generator import MockObjClass
 from esphome.types import ConfigType
 
 _LOGGER = logging.getLogger(__name__)
 
-AUTO_LOAD = ["sensor", "text_sensor", "binary_sensor", "lock"]
+AUTO_LOAD = ["sensor", "text_sensor", "binary_sensor", "lock", "esp32_ble_tracker", "esp32_ble_client"]
 DEPENDENCIES = ["esp32", "sensor", "text_sensor", "binary_sensor"]
-CONFLICTS_WITH = ["esp32_ble"]
+CONFLICTS_WITH = ["sesame_server"]
 MULTI_CONF = True
 
 lock_ns = cg.esphome_ns.namespace("lock")
@@ -52,9 +49,8 @@ SesameComponent = sesame_lock_ns.class_("SesameComponent", cg.PollingComponent)
 SesameLock = sesame_lock_ns.class_("SesameLock", lock.Lock)
 BotFeature = sesame_lock_ns.class_("BotFeature")
 BinarySensorWithInvalidate = sesame_lock_ns.class_("BinarySensorWithInvalidate", binary_sensor.BinarySensor)
-
-sesame_server_ns = cg.esphome_ns.namespace("sesame_server")
-SesameServerComponent = sesame_server_ns.class_("SesameServerComponent")
+# Owned by SesameComponent; keeps the ESPHome BLE stack as the only backend.
+SesameBLEClient = sesame_lock_ns.class_("SesameBLEClient", esp32_ble_client.BLEClientBase)
 
 CONF_PUBLIC_KEY = "public_key"
 CONF_SECRET = "secret"
@@ -79,7 +75,7 @@ CONF_BOT = "bot"
 CONF_RUNNING_SENSOR = "running_sensor"
 CONF_ALWAYS_CONNECT = "always_connect"
 CONF_FAST_NOTIFY = "fast_notify"
-CONF_SERVER_ID = "server_id"
+CONF_INTERNAL_BLE_CLIENT_ID = "internal_ble_client_id"
 
 SesameModel_t = cg.global_ns.enum("libsesame3bt::Sesame::model_t", True)
 SESAME_MODELS = {
@@ -133,45 +129,18 @@ def is_lockable_model(model):
     )
 
 
-def is_connectable_trigger_model(model):
-    return model in (
-        "sesame_touch_pro",
-        "sesame_touch",
-        "remote",
-        "sesame_face_pro",
-        "sesame_face",
-        "sesame_face_pro_ai",
-        "sesame_face_ai",
-        "open_sensor_2",
-        "sesame_touch_2",
-        "sesame_touch_2_pro",
-        "sesame_face_2",
-        "sesame_face_2_pro",
-        "sesame_face_2_ai",
-        "sesame_face_2_pro_ai",
-    )
+def validate_standard_ble(config):
+    full = fv.full_config.get()
+    options = full.get("esp32", {}).get("framework", {}).get("sdkconfig_options", {})
+    if str(options.get("CONFIG_BT_NIMBLE_ENABLED", "n")).lower() in ("y", "true", "1"):
+        raise cv.Invalid("Remove CONFIG_BT_NIMBLE_ENABLED and the old NimBLE build options; sesame uses ESPHome standard BLE")
+    used = CORE.data.get(esp32_ble.KEY_ESP32_BLE, {}).get(esp32_ble.KEY_USED_CONNECTION_SLOTS, [])
+    maximum = full.get("esp32_ble", {}).get("max_connections", esp32_ble.DEFAULT_MAX_CONNECTIONS)
+    if len(used) > maximum:
+        raise cv.Invalid(f"BLE clients require {len(used)} slots; set esp32_ble.max_connections to at least {len(used)}")
 
 
-def add_sesame_server_references(config: esp_config.Config):
-    """Add a reference to the Sesame server component if it exists in the config."""
-    if not is_connectable_trigger_model(config[CONF_MODEL]):
-        return
-    server_id = None
-    for id, _ in esp_config.iter_ids(fv.full_config.get()):
-        if id is None or not isinstance(id.type, MockObjClass):
-            continue
-        if id.is_declaration and id.type.inherits_from(SesameServerComponent):
-            if server_id is not None:
-                raise cv.Invalid("Only one Sesame server can be defined in the configuration")
-            server_id = id
-    if server_id is None:
-        return
-    if config[CONF_ALWAYS_CONNECT]:
-        raise cv.Invalid("If SESAME Server co-exists in this device, `always_connect` must be False for Sesame Touch Pro / Sesame Touch / Remote")
-    config[CONF_SERVER_ID] = core.ID(server_id.id, False, SesameServerComponent, False)
-
-
-FINAL_VALIDATE_SCHEMA = add_sesame_server_references
+FINAL_VALIDATE_SCHEMA = validate_standard_ble
 
 
 def is_hex_string(str, valid_len):
@@ -254,7 +223,7 @@ def validate_deprecation(config: ConfigType) -> ConfigType:
     return config
 
 
-cv.All(cv.version_number, cv.validate_esphome_version)("2025.5.0")
+cv.All(cv.version_number, cv.validate_esphome_version)("2026.9.0")
 
 
 def lock_history_schema(prefix) -> dict:
@@ -319,6 +288,7 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(SesameComponent),
+            cv.GenerateID(CONF_INTERNAL_BLE_CLIENT_ID): cv.declare_id(SesameBLEClient),
             cv.Required(CONF_MODEL): cv.enum(SESAME_MODELS),
             cv.Optional(CONF_PUBLIC_KEY, default=""): cv.string,
             cv.Required(CONF_SECRET): valid_hexstring(CONF_SECRET, 32),
@@ -359,12 +329,13 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_TIMEOUT, default="10s"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_ALWAYS_CONNECT, default=True): cv.boolean,
         }
-    ).extend(cv.polling_component_schema("never")),
+    ).extend(cv.polling_component_schema("never")).extend(esp32_ble_tracker.ESP_BLE_DEVICE_SCHEMA),
     validate_address,
     validate_pubkey,
     validate_lockable,
     validate_always_connect,
     validate_bot_features,
+    esp32_ble.consume_connection_slots(1, "sesame"),
 )
 
 
@@ -398,6 +369,13 @@ async def add_history_codes(lock_obj, config, prefix):
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID], str(config[CONF_ID]))
     await cg.register_component(var, config)
+    client = cg.new_Pvariable(config[CONF_INTERNAL_BLE_CLIENT_ID])
+    await cg.register_component(client, {CONF_ID: config[CONF_INTERNAL_BLE_CLIENT_ID]})
+    await esp32_ble_tracker.register_client(client, config)
+    cg.add(client.set_auto_connect(False))
+    cg.add(var.set_ble_client(client))
+    cg.add_define("USE_ESP32_BLE_UUID")
+    esp32_ble.register_bt_logger(esp32_ble.BTLoggers.GATT, esp32_ble.BTLoggers.SMP)
     if CONF_BATTERY_PCT in config:
         s = await sensor.new_sensor(config[CONF_BATTERY_PCT])
         cg.add(var.set_battery_pct_sensor(s))
@@ -416,9 +394,6 @@ async def to_code(config):
         cg.add(var.set_connection_timeout(config[CONF_TIMEOUT].total_milliseconds))
     if CONF_ALWAYS_CONNECT in config:
         cg.add(var.set_always_connect(config[CONF_ALWAYS_CONNECT]))
-    if CONF_SERVER_ID in config:
-        server = await cg.get_variable(config[CONF_SERVER_ID])
-        cg.add(var.set_sesame_server(server))
 
     if CONF_LOCK in config:
         lconfig = config[CONF_LOCK]
@@ -446,12 +421,6 @@ async def to_code(config):
     uuid = str(config[CONF_UUID]) if CONF_UUID in config else ""
     cg.add(var.init(config[CONF_MODEL], config[CONF_PUBLIC_KEY], config[CONF_SECRET], address, uuid))
 
-    cg.add_library("libsesame3bt", "libsesame3bt", "https://github.com/homy-newfs8/libsesame3bt#v0.50.0")
-    # cg.add_library("libsesame3bt", None, "symlink://../../../../libsesame3bt")
-    # cg.add_library("libsesame3bt-core", None, "symlink://../../../../libsesame3bt-core")
-    # cg.add_library("libsesame3bt-server", None, "symlink://../../../../libsesame3bt-server")
-    # cg.add_platformio_option("lib_ldf_mode", "deep")
-
-    if not CORE.using_arduino:
-        esp32.add_idf_component(name="h2zero/esp-nimble-cpp", ref="~2.5.0")
-        CORE.add_platformio_option("lib_ignore", "NimBLE-Arduino")
+    cg.add_library("libsesame3bt-core", None, "https://github.com/homy-newfs8/libsesame3bt-core#v0.50.0")
+    cg.add_build_flag("-DUSE_FRAMEWORK_MBEDTLS_CMAC")
+    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_CMAC_C", True)

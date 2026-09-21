@@ -5,13 +5,12 @@ esphome:
     build_flags:
       - -Wall
       - -Wextra
-      - -DUSE_FRAMEWORK_MBEDTLS_CMAC
-  min_version: 2025.10.0
+  min_version: 2026.9.0
 external_components:
   - source:
       type: git
       url: https://github.com/homy-newfs8/esphome-sesame3
-      ref: v0.31.0
+      ref: v0.32.0
     components: [sesame, sesame_ble]
   # - source: "components"
   #   components: [sesame, sesame_ble]
@@ -20,14 +19,21 @@ esp32:
   board: esp32-s3-devkitc-1
   framework:
     type: esp-idf
-    sdkconfig_options:
-      CONFIG_BT_ENABLED: y
-      CONFIG_BT_NIMBLE_ENABLED: y
-      # Configure the maximum number of connections as required (maximum: 9)
-      CONFIG_BT_NIMBLE_MAX_CONNECTIONS: "6"
-      CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS: y
-      CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED: y
-      CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED: y
+
+# SESAME uses ESPHome's standard BLE stack, so esp32_ble, esp32_ble_tracker,
+# bluetooth_proxy and BLE presence sensors can share this ESP32.
+# Do not add CONFIG_BT_NIMBLE_* options: they conflict with the standard stack.
+esp32_ble:
+  # One connection slot per SESAME that is connected at the same time.
+  # Add the bluetooth_proxy `connection_slots` value on top of that.
+  max_connections: 5
+
+# Optional: BLE advertisement scanning / Bluetooth proxy on the same device.
+# esp32_ble_tracker:
+#
+# bluetooth_proxy:
+#   active: true
+#   connection_slots: 2
 
 ota:
   - platform: esphome
@@ -101,7 +107,7 @@ button:
 
 ## Supported devices examples
 ## Choose one or more you want to use
-## If you need more than four BLE connections, modify CONFIG_BT_NIMBLE_MAX_CONNECTIONS setting in esphome: section
+## If you need more BLE connections, raise esp32_ble `max_connections` above.
 sesame:
   - id: sesame1
     ## model: Requried: sesame_5 / sesame_5_pro / sesame_touch / sesame_touch_pro / open_sensor / sesame_bike_2 / sesame_4 / sesame_3 / sesame_bot / sesame_bike

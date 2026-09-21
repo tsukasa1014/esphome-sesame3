@@ -10,7 +10,7 @@ using esphome::lock::LockState;
 using model_t = libsesame3bt::Sesame::model_t;
 using history_tag_type_t = libsesame3bt::history_tag_type_t;
 using libsesame3bt::Sesame;
-using libsesame3bt::SesameClient;
+using SesameClient = esphome::sesame_lock::SesameProtocol;
 using Status = SesameClient::Status;
 namespace util = libsesame3bt::core::util;
 
@@ -38,14 +38,6 @@ SesameLock::init() {
 		get_history_set().reserve_tag_buffer();
 		get_all_history_set().reserve_tag_buffer();
 		parent_->sesame.set_history_callback([this](auto& client, const auto& history) {
-			ESP_LOGD(TAG, "hist: r=%u,id=%ld,type=%u,str=(%u)%.*s,svol=%.2f,svol2=%.2f", static_cast<uint8_t>(history.result),
-			         history.record_id, static_cast<uint8_t>(history.type), history.tag_len, history.tag_len, history.tag,
-			         history.scaled_voltage, history.scaled_voltage2);
-			if (history.extra.size() > 0) {
-				ESP_LOGD(TAG, "hist extra: %s", util::bin2hex(history.extra.data(), history.extra.size()).c_str());
-			} else {
-				ESP_LOGD(TAG, "hist extra: (none)");
-			}
 			if (is_bot1()) {
 				handle_bot_history(history);
 				return;

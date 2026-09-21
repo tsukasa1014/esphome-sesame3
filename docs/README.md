@@ -20,11 +20,12 @@
 > ESP32-PICO-D4 with ESPHome version 2026.3.x (e.g., M5Stack Atom Lite, M5Stick-C).\
 > If you experience instability, please try using an newer or earlier version of ESPHome, such as 2026.4.x.
 
-> [!NOTE]
-> This component does not use ESPHome's built-in `BTClient`
-> functionality. Therefore, this component cannot coexist with other BLE
-> components on the same ESP32. Use this component with a separate ESP32 device
-> from other BLE components.
+> [!IMPORTANT]
+> Since v0.32.0 this component uses ESPHome's own BLE stack instead of its own
+> NimBLE client. `sesame`, `esp32_ble`, `esp32_ble_tracker`, `bluetooth_proxy`
+> and BLE presence sensors can therefore run on the same ESP32. Remove the old
+> NimBLE `sdkconfig_options` (`CONFIG_BT_NIMBLE_*`) when upgrading; the
+> component rejects a configuration that still enables NimBLE.
 
 
 # Setup this component
@@ -42,15 +43,9 @@ external_components:
 
 # Build options
 
-The build options differ depending on the version of ESPHome. See the example below.
-
-If you want to use more than four SESAME devices with one ESP32 module, edit the `CONFIG_BT_NIMBLE_MAX_CONNECTIUONS` parameter (It might be a good idea to check the free memory with ESPHome's [Debug](https://esphome.io/components/debug.html) component).
-
-Select the ESP32 board you want to use. Choose Arduino or ESP-IDF framework.
-
-## ESPHome 2025.10.0 or later
-
-NimBLE must be enabled by `sdkconfig_options`, and many compile options moved to `sdkconfig_options` section.
+No NimBLE build options are needed any more. `sesame` auto-loads
+`esp32_ble_tracker` and `esp32_ble_client`, and enables the mbedTLS CMAC
+primitive the SESAME protocol needs.
 
 ```yaml
 esphome:
@@ -58,68 +53,50 @@ esphome:
     build_flags:
       - -Wall
       - -Wextra
-      - -DUSE_FRAMEWORK_MBEDTLS_CMAC
-  min_version: 2025.10.0
+  min_version: 2026.9.0
 
 esp32:
-  board: esp32-c3-devkitm-1
+  board: esp32-s3-devkitc-1
   framework:
-    type: arduino
-    sdkconfig_options:
-      CONFIG_BT_ENABLED: y
-      CONFIG_BT_NIMBLE_ENABLED: y
-      # Configure the maximum number of connections as required (maximum: 9)
-      CONFIG_BT_NIMBLE_MAX_CONNECTIONS: "6"
-      CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS: y
-      CONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED: y
-      CONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED: y
+    type: esp-idf
+
+esp32_ble:
+  # One slot per SESAME that connects at the same time, plus bluetooth_proxy slots.
+  max_connections: 5
 ```
 
-You can select `esp-idf` instead of arduino.
+`esp32_ble` is created automatically when it is missing, but set
+`max_connections` explicitly when more than three BLE clients share the ESP32.
+`sesame` fails the build when the configured limit is smaller than the number
+of registered BLE clients, instead of silently failing to connect at runtime.
 
-## ESPHome 2025.7.0 to 2025.9.x
+## Coexisting with a BLE scanner or Bluetooth proxy
+
+`esp32_ble_tracker` keeps scanning advertisements while SESAME devices are
+connected, so a phone-presence sensor and SESAME can share one ESP32:
 
 ```yaml
-esphome:
-  platformio_options:
-    build_flags:
-      - -Wall -Wextra
-      - -DMBEDTLS_DEPRECATED_REMOVED -DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED -DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED
-# Configure the maximum number of connections as required
-      - -DCONFIG_BT_NIMBLE_MAX_CONNECTIONS=4
-      - -DCONFIG_MBEDTLS_CMAC_C -DUSE_FRAMEWORK_MBEDTLS_CMAC
-  min_version: 2025.7.0
+esp32_ble:
+  max_connections: 5
+  use_psram: true   # requires the `psram:` component on ESP32-S3 N16R8
 
-esp32:
-  board: esp32-c3-devkitm-1
-  framework:
-    type: arduino
+esp32_ble_tracker:
 
-external_components:
-  - source:
-      type: git
-      url: https://github.com/homy-newfs8/esphome-sesame3
-      ref: v0.26.1
-    components: [ sesame, sesame_ble ]
+bluetooth_proxy:
+  active: true
+  connection_slots: 2
+
+sesame:
+  - id: sesame1
+    model: sesame_5
+    uuid: !secret sesame5_1_uuid
+    secret: !secret sesame5_1_secret
 ```
 
-
-# ESPHome 2025.5.x to 2025.6.x
-
-```
-esphome:
-  platformio_options:
-    build_flags:
-      - -std=gnu++17 -Wall -Wextra
-      - -DMBEDTLS_DEPRECATED_REMOVED -DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED -DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED
-# Configure the maximum number of connections as required
-      - -DCONFIG_BT_NIMBLE_MAX_CONNECTIONS=4
-    build_unflags:
-      - -std=gnu++11
-  min_version: 2025.5.0
-```
-
-(More older versions of ESPHome was supported by old versions of this component (not documented))
+Scan parameters are shared by every component that uses the tracker. A
+continuous 320ms/320ms scan (100% radio duty) still leaves connections usable,
+but a lower duty cycle such as `interval: 320ms` with `window: 160ms` gives
+the connected SESAME devices more air time when several are connected at once.
 
 
 # Configure for your SESAME
@@ -397,9 +374,10 @@ sesame:
 ```
 
 > [!NOTE]
-> `sesame` component cannot coexist with other BLE components
-> including `esp32_ble_tracker`. Once you have identified SESAME's BLE address,
-> you will need to remove the above configuration.</b>
+> `sesame_ble` only listens to advertisements on ESPHome's BLE stack, so it can
+> stay enabled together with `sesame`, `esp32_ble_tracker` and
+> `bluetooth_proxy`. Remove it once you have identified the SESAME BLE
+> addresses if you no longer need the log output.
 
 # Expose SESAME battery information as sensor value
 

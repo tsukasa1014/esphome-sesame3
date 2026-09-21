@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Sesame.h>
-#include <SesameClient.h>
+#include "sesame_protocol.h"
 #include <esphome/components/lock/lock.h>
 #include <esphome/components/sensor/sensor.h>
 #include <esphome/components/text_sensor/text_sensor.h>
@@ -37,7 +37,7 @@ struct history_set {
 	}
 	void reserve_tag_buffer() {
 		if (using_history()) {
-			recv_history_tag.reserve(libsesame3bt::SesameClient::MAX_CMD_TAG_SIZE + 1);
+			recv_history_tag.reserve(SesameProtocol::MAX_CMD_TAG_SIZE + 1);
 		}
 	}
 	void save_received_values(libsesame3bt::Sesame::history_type_t type,
@@ -136,7 +136,7 @@ class SesameLock : public lock::Lock, public Feature {
 	void publish_all_history_state();
 	bool history_type_matched(lock::LockState, libsesame3bt::Sesame::history_type_t);
 	void clear_history();
-	void handle_bot_history(const libsesame3bt::SesameClient::History& history);
+	void handle_bot_history(const SesameProtocol::History& history);
 	bool is_bot1() const;
 	void set_battery_pct_sensor(sensor::Sensor* sensor, float scaled_voltage);
 	void set_history_sensors();

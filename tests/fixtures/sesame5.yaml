@@ -1,0 +1,35 @@
+esphome:
+  name: sesame-standard-ble-test
+  min_version: 2026.9.0
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  toolchain: platformio
+  framework:
+    type: esp-idf
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+logger:
+api:
+wifi:
+  ssid: test-network
+  password: test-password
+esp32_ble:
+  max_connections: 1
+esp32_ble_tracker:
+sesame:
+  - id: sesame_one
+    model: sesame_5
+    uuid: "01020304-0102-0102-0102-010203040506"
+    secret: "00000000000000000000000000000000"
+    always_connect: true
+    lock:
+      id: front_lock
+      name: Test Lock
+    connection_sensor:
+      name: Test connection
+    battery_pct:
+      name: Test battery

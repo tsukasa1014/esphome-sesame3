@@ -1,22 +1,17 @@
 #pragma once
 
-#include <SesameClient.h>
+#include "sesame_protocol.h"
+#include "sesame_ble_client.h"
 #include <esphome/components/binary_sensor/binary_sensor.h>
 #include <esphome/components/sensor/sensor.h>
 #include <esphome/core/component.h>
 #include <esphome/core/version.h>
-#include <mutex>
+#include <array>
 #include <string_view>
 #include <vector>
 #include "feature.h"
 
 namespace esphome {
-
-namespace sesame_server {
-
-class SesameServerComponent;
-
-}  // namespace sesame_server
 
 namespace sesame_lock {
 
@@ -45,20 +40,11 @@ class BinarySensorWithInvalidate : public binary_sensor::BinarySensor {
 #endif
 };
 
-enum class state_t : int8_t {
-	not_connected,
-	wait_connect_turn,
-	connecting,
-	authenticating,
-	running,
-	wait_disconnected,
-	wait_reboot,
-	wait_server_disconnect
-};
+enum class state_t : int8_t { not_connected, connecting, authenticating, running, wait_disconnected };
 
 class SesameLock;
 class BotFeature;
-class SesameComponent : public PollingComponent {
+class SesameComponent : public PollingComponent, public libsesame3bt::core::SesameBLEBackend {
 	friend class SesameLock;
 	friend class BotFeature;
 
@@ -71,6 +57,12 @@ class SesameComponent : public PollingComponent {
 	          std::string_view uuid);
 	void setup() override;
 	void loop() override;
+	void set_ble_client(SesameBLEClient* client) {
+		ble_client_ = client;
+		client->set_owner(this);
+	}
+	void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t* param);
+	bool write_to_tx(const uint8_t* data, size_t size) override;
 	void set_battery_pct_sensor(sensor::Sensor* sensor) { pct_sensor = sensor; }
 	void set_battery_voltage_sensor(sensor::Sensor* sensor) { voltage_sensor = sensor; }
 	void set_connection_sensor(binary_sensor::BinarySensor* sensor) { connection_sensor = sensor; }
@@ -80,15 +72,15 @@ class SesameComponent : public PollingComponent {
 	void set_feature(Feature* feature) { this->feature = feature; }
 	void set_always_connect(bool always) { this->always_connect = always; }
 	virtual float get_setup_priority() const override { return setup_priority::AFTER_WIFI; };
-	void set_sesame_server(sesame_server::SesameServerComponent* server) { this->server = server; }
 	virtual void update() override;
 	void make_unknown();
 
  private:
-	libsesame3bt::SesameClient sesame;
-	esphome::optional<libsesame3bt::SesameClient::Status> sesame_status;
-	NimBLEAddress ble_address;
-	uint32_t last_connect_attempted = 0;
+	SesameBLEClient* ble_client_ = nullptr;
+	SesameProtocol sesame{*this};
+	esphome::optional<SesameProtocol::Status> sesame_status;
+	uint32_t retry_started_ = 0;
+	uint32_t retry_delay_ = 0;
 	uint32_t state_started = 0;
 	std::string log_tag_string;
 	const char* TAG = "";
@@ -97,12 +89,27 @@ class SesameComponent : public PollingComponent {
 	BinarySensorWithInvalidate* battery_critical_sensor = nullptr;
 	Feature* feature = nullptr;
 	binary_sensor::BinarySensor* connection_sensor = nullptr;
-	sesame_server::SesameServerComponent* server = nullptr;
 	state_t my_state = state_t::not_connected;
 	uint16_t connect_limit = 0;
 	uint16_t connect_tried = 0;
 	uint32_t connection_timeout = 10'000;
 	bool always_connect = true;
+	bool status_pending_ = false;
+	bool transport_failed_ = false;
+	bool subscribed_ = false;
+	bool write_pending_ = false;
+	uint32_t write_started_ = 0;
+	uint16_t tx_handle_ = 0;
+	uint16_t rx_handle_ = 0;
+	uint16_t cccd_handle_ = 0;
+	struct Fragment {
+		std::array<uint8_t, 20> data{};
+		uint8_t size = 0;
+	};
+	static constexpr size_t TX_QUEUE_SIZE = 32;
+	std::array<Fragment, TX_QUEUE_SIZE> tx_queue_{};
+	size_t tx_head_ = 0;
+	size_t tx_count_ = 0;
 	union {
 		uint8_t value;
 		struct {
@@ -111,21 +118,13 @@ class SesameComponent : public PollingComponent {
 	} operation_requested{};
 	static_assert(sizeof(operation_requested.value) == sizeof(operation_requested));
 
-	static inline int instance_count = 0;
-	static inline std::mutex ble_connecting_mux{};
-	static inline std::vector<SesameComponent*> connect_queue{};
-	static inline bool global_initialized{};
-
 	void set_state(state_t);
 	void reflect_sesame_status();
 	void publish_connection_state(bool connected);
 	void disconnect();
-	int get_last_error() const { return sesame.get_ble_client() ? sesame.get_ble_client()->getLastError() : -1; }
-
-	static void global_init();
-	static bool enqueue_connect(SesameComponent*);
-	static bool can_connect(SesameComponent*);
-	static void connect_done(SesameComponent*);
+	void reset_session_();
+	void schedule_retry_();
+	void pump_tx_();
 };
 
 }  // namespace sesame_lock

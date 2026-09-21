@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.32.0] unreleased
+- Use ESPHome's standard BLE stack (`esp32_ble` / `esp32_ble_tracker`) instead of a private NimBLE client.
+  - `sesame` no longer conflicts with `esp32_ble`, so `esp32_ble_tracker`, BLE presence sensors and
+    `bluetooth_proxy` can share the same ESP32 while SESAME devices stay connected.
+  - Remove the old `CONFIG_BT_NIMBLE_*` sdkconfig options; the component now fails the build if NimBLE
+    is still enabled.
+  - The SESAME protocol, authentication and encryption come from `libsesame3bt-core`; the BLE transport
+    is ESPHome's `esp32_ble_client`.
+  - BLE connection slots are reserved per SESAME entry and checked against `esp32_ble.max_connections`
+    at build time.
+  - mbedTLS CMAC and `-DUSE_FRAMEWORK_MBEDTLS_CMAC` are configured by the component, so they no longer
+    need to be listed in `platformio_options`.
+- Requires ESPHome 2026.9.0 or later (`min_version`).
+
 ## [v0.31.0] 2026-08-23
 - Bump libsesame3bt to 0.50.0
 
