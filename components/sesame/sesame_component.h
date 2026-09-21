@@ -115,9 +115,16 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	static constexpr uint32_t DISCONNECT_TIMEOUT_MS = 15'000;
 	static constexpr uint32_t BLE_RESTART_RETRY_MS = 5'000;
 	static constexpr uint8_t MAX_STUCK_CYCLES = 3;
+	static constexpr uint8_t MAX_BLE_RESTART_ATTEMPTS = 6;
+	// Cycling the stack stops the presence scan and drops proxy links for a few
+	// seconds, so keep a floor between restarts.
+	static constexpr uint32_t BLE_RESTART_MIN_INTERVAL_MS = 600'000;
 	uint8_t stuck_cycles_ = 0;
 	bool ble_restart_pending_ = false;
 	uint32_t ble_restart_started_ = 0;
+	uint8_t ble_restart_attempts_ = 0;
+	uint8_t ble_restart_count_ = 0;
+	uint32_t last_ble_restart_ = 0;
 	union {
 		uint8_t value;
 		struct {

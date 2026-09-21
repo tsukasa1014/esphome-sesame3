@@ -8,6 +8,7 @@ standard-BLE port by hand. All addresses, UUIDs and secrets in them are fake.
 | `sesame5.yaml` | Minimal single SESAME 5 with a lock, connection and battery sensors. |
 | `sesame_minimal_no_ble.yaml` | Upgrade path: only `sesame:` is declared. `esp32_ble`, `esp32_ble_tracker` and `esp32_ble_client` must be auto-loaded. |
 | `sesame_touch_poll.yaml` | SESAME Touch in polling mode (`always_connect: false` plus `update_interval`). |
+| `sesame_touch_no_interval.yaml` | Must stay valid but warn: `always_connect: false` with `update_interval: never` can never connect. |
 | `sesame_full_features.yaml` | The option surface the existing configs use: OS3 lock with every `history_*` / `all_history_*` sensor, and an OS3 Bot with a `running_sensor`. |
 | `sesame_merged.yaml` | The merged entrance node: 2x SESAME 5 + 1x SESAME Touch, `esp32_ble_tracker` with an iBeacon presence lambda, `bluetooth_proxy` with 2 slots, PSRAM and `esp32_ble.max_connections: 5`. |
 | `sesame_merged_arduino.yaml` | The same merged node on `framework: type: arduino`, which the existing SESAME configuration uses. |
@@ -57,7 +58,7 @@ That is the check that the ESPHome stack is the only BLE backend in the image.
 | `sesame_ble_only.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 18.4% (60284/327680), Flash 13.0% (1052379/8126464) |
 | `sesame_full_features.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 19.4% (63644/327680), Flash 13.4% (1088055/8126464) |
 
-Both images report `CONFIG_BT_BLUEDROID_ENABLED=y`, `# CONFIG_BT_NIMBLE_ENABLED is not set`,
+Every image reports `CONFIG_BT_BLUEDROID_ENABLED=y`, `# CONFIG_BT_NIMBLE_ENABLED is not set`,
 `CONFIG_BT_GATTC_ENABLE=y`, `CONFIG_MBEDTLS_CMAC_C=y`, and no warnings from the component
 under `-Wall -Wextra`.
 

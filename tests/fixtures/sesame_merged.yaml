@@ -56,6 +56,9 @@ esp32_ble_tracker:
   scan_parameters:
     interval: 320ms
     window: 320ms
+    # Explicit window, so ESPHome does not inject the usual 30ms fallback that
+    # keeps connected SESAME devices from sharing the radio with a full duty scan.
+    connection_scan_window: 30ms
     active: false
     continuous: true
   on_ble_advertise:

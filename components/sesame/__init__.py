@@ -183,7 +183,7 @@ def valid_hexstring(key, valid_len):
         # A hex secret that happens to be all digits is read as a number by YAML
         # unless it is quoted, which used to surface as a TypeError traceback.
         hint = "" if isinstance(value, str) else " (quote it: an all-digit value is parsed as a number)"
-        raise cv.Invalid(f"'{key}' must be a {valid_len} bytes hex string{hint}")
+        raise cv.Invalid(f"'{key}' must be a {valid_len} hex character string{hint}")
 
     return func
 
@@ -459,4 +459,5 @@ async def to_code(config):
 
     cg.add_library("libsesame3bt-core", None, "https://github.com/homy-newfs8/libsesame3bt-core#v0.50.0")
     cg.add_build_flag("-DUSE_FRAMEWORK_MBEDTLS_CMAC")
-    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_CMAC_C", True)
+    # A default, not a forced value: the user's sdkconfig_options must still win.
+    esp32.set_idf_sdkconfig_default("CONFIG_MBEDTLS_CMAC_C", True)

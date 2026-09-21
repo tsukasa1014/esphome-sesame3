@@ -1,5 +1,6 @@
 #include "sesame_component.h"
 #include <esphome/components/esp32_ble/ble.h>
+#include <esphome/core/application.h>
 #include <esphome/core/log.h>
 #include <libsesame3bt/ServerCore.h>
 #include <libsesame3bt/util.h>
@@ -239,19 +240,33 @@ void SesameComponent::loop() {
   if (feature) feature->loop();
 
   if (ble_restart_pending_) {
-    // ESP32BLE::enable() is a no-op unless the stack is DISABLED, and a failed
-    // bring-up leaves it OFF, so keep re-requesting until it is really back.
+    // ESP32BLE::enable() only acts on DISABLED/DISABLE, and a failed bring-up
+    // leaves the stack OFF with its loop disabled, so retrying forever cannot
+    // recover. Keep asking for a while, then restart the whole node.
     if (now - ble_restart_started_ > BLE_RESTART_RETRY_MS) {
       ble_restart_started_ = now;
       if (esp32_ble::global_ble != nullptr)
         esp32_ble::global_ble->enable();
+      if (++ble_restart_attempts_ > MAX_BLE_RESTART_ATTEMPTS) {
+        ESP_LOGE(TAG, "BLE stack did not come back; rebooting");
+        App.safe_reboot();
+        return;
+      }
     }
     if (esp32_ble::global_ble != nullptr && esp32_ble::global_ble->is_active() &&
         client_state != ClientState::INIT) {
       ble_restart_pending_ = false;
+      ble_restart_attempts_ = 0;
       ESP_LOGW(TAG, "BLE stack is back after repeated connection stalls");
     }
     return;
+  }
+
+  // A late CONNECT_EVT can set conn_id after the client was dropped back to IDLE,
+  // which would leave the controller link open with nothing tracking it.
+  if (client_state == ClientState::IDLE && ble_client_->get_conn_id() != esp32_ble_client::UNSET_CONN_ID) {
+    ESP_LOGW(TAG, "Closing a link that outlived the client reset");
+    ble_client_->unconditional_disconnect();
   }
 
   // Also handles stack disable/re-enable and the parent's lost CLOSE_EVT recovery.
@@ -272,10 +287,19 @@ void SesameComponent::loop() {
     }
     if (stalled && ++stuck_cycles_ >= MAX_STUCK_CYCLES && esp32_ble::global_ble != nullptr) {
       stuck_cycles_ = 0;
-      ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack");
-      esp32_ble::global_ble->disable();
-      ble_restart_pending_ = true;
-      ble_restart_started_ = now;
+      // Cycling the stack stops the presence scan and drops proxy links for a few
+      // seconds, so do it at most once every BLE_RESTART_MIN_INTERVAL_MS.
+      if (now - last_ble_restart_ < BLE_RESTART_MIN_INTERVAL_MS) {
+        ESP_LOGW(TAG, "BLE controller stalled again; keeping the stack up for now");
+      } else {
+        last_ble_restart_ = now;
+        ++ble_restart_count_;
+        ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack (#%u)", ble_restart_count_);
+        esp32_ble::global_ble->disable();
+        ble_restart_pending_ = true;
+        ble_restart_started_ = now;
+        ble_restart_attempts_ = 0;
+      }
     }
     reset_session_();
     set_state(state_t::not_connected);

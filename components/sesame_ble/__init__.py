@@ -25,4 +25,5 @@ async def to_code(config):
     # PlatformIO library include path. The advertisement scanner does not use CMAC
     # itself, but PlatformIO compiles the whole library.
     cg.add_build_flag("-DUSE_FRAMEWORK_MBEDTLS_CMAC")
-    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_CMAC_C", True)
+    # A default, not a forced value: the user's sdkconfig_options must still win.
+    esp32.set_idf_sdkconfig_default("CONFIG_MBEDTLS_CMAC_C", True)
