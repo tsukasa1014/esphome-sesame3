@@ -1,0 +1,37 @@
+# Enables the `sesame_ble` advertisement scanner, which the docs recommend for
+# discovering SESAME BLE addresses. This fixture exists so sesame_ble.cpp is
+# actually compiled: listing it in external_components alone does not build it.
+esphome:
+  name: sesame-ble-scan-test
+  min_version: 2026.9.0
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  toolchain: platformio
+  framework:
+    type: esp-idf
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+logger:
+  level: DEBUG
+api:
+wifi:
+  ssid: test-network
+  password: test-password
+esp32_ble:
+  max_connections: 5
+esp32_ble_tracker:
+sesame_ble:
+sesame:
+  - id: sesame_one
+    model: sesame_5
+    uuid: "01020304-0102-0102-0102-010203040506"
+    secret: "00000000000000000000000000000000"
+    lock:
+      id: front_lock
+      name: Test Lock
+    connection_sensor:
+      name: Test connection

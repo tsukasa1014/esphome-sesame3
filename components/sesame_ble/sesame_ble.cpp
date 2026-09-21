@@ -76,7 +76,11 @@ static const ESPBTUUID SESAME_SRV_UUID = ESPBTUUID::from_raw(Sesame::SESAME3_SRV
 
 bool
 esphome::sesame_ble::SesameBleListener::parse_device(const esp32_ble_tracker::ESPBTDevice& device) {
-	if (auto last = uniq_addrs[device.address_str()]; last && esphome::millis() - last < 10'000) {
+	char addr_buf[esphome::MAC_ADDRESS_PRETTY_BUFFER_SIZE];
+	device.address_str_to(addr_buf);
+	const auto now = esphome::millis();
+	// Look up without inserting: every non-SESAME advertisement reaches this point.
+	if (auto it = uniq_addrs.find(addr_buf); it != uniq_addrs.end() && now - it->second < 10'000) {
 		return false;
 	}
 	if (const auto& services = device.get_service_uuids();
@@ -96,12 +100,17 @@ esphome::sesame_ble::SesameBleListener::parse_device(const esp32_ble_tracker::ES
 	}
 	auto manu_data = std::string{0x5a, 0x05} + std::string(reinterpret_cast<const char*>(found->data.data()), found->data.size());
 	uint8_t uuid_bin[16];
-	auto [model, flag_byte, is_valid] = libsesame3bt::core::parse_advertisement(manu_data, device.get_name(), uuid_bin);
+	// ESPBTDevice::get_name() returns StringRef, which does not convert to
+	// std::string_view implicitly (that would need two user-defined conversions).
+	const auto name = device.get_name();
+	auto [model, flag_byte, is_valid] =
+	    libsesame3bt::core::parse_advertisement(manu_data, std::string_view{name.c_str(), name.size()}, uuid_bin);
 	if (is_valid) {
 		std::reverse(std::begin(uuid_bin), std::end(uuid_bin));
 		auto uuid = ESPBTUUID::from_raw(uuid_bin);
-		ESP_LOGI(TAG, "%s SESAME %s UUID=%s", device.address_str().c_str(), model_str(model), uuid.to_string().c_str());
-		uniq_addrs[device.address_str()] = esphome::millis();
+		char uuid_str[esphome::ble_device_base::UUID_STR_LEN];
+		ESP_LOGI(TAG, "%s SESAME %s UUID=%s", addr_buf, model_str(model), uuid.to_str(uuid_str));
+		uniq_addrs[addr_buf] = now;
 	}
 
 	return is_valid;

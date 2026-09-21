@@ -12,6 +12,15 @@
     at build time.
   - mbedTLS CMAC and `-DUSE_FRAMEWORK_MBEDTLS_CMAC` are configured by the component, so they no longer
     need to be listed in `platformio_options`.
+  - Verified on both ESP-IDF and Arduino frameworks; `esp32_ble`, `esp32_ble_tracker` and
+    `esp32_ble_client` are auto-loaded, so an existing `sesame:`-only configuration keeps working.
+- Breaking changes:
+  - `connect_retry_limit` no longer reboots the ESP32 module. It now caps the retry backoff at 60s, so a
+    single unreachable lock cannot take down the BLE presence scanner or the Bluetooth proxy that share
+    the device. Recovery from a stalled BLE controller is handled by restarting the ESPHome BLE stack
+    instead of rebooting.
+  - `sesame` can no longer be combined with `esphome-sesame_server` (`CONFLICTS_WITH = ["sesame_server"]`).
+    Use `always_connect: true` plus `update_interval` for Touch / Remote style devices.
 - Requires ESPHome 2026.9.0 or later (`min_version`).
 
 ## [v0.31.0] 2026-08-23

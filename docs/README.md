@@ -162,7 +162,7 @@ See [below](#identify-parameter-values-for-sesame-devices) for information on ho
 * **secret** (**Required**, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **public_key** (**Required** for SESAME OS2 models, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **timeout** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Connection to SESAME timeout value. Defaults to `10s`.
-* **connect_retry_limit** (*Optional*, int): Specifies the number of connection failures before reboot the ESP32 module. Defaults to `0` (do not reboot).
+* **connect_retry_limit** (*Optional*, int): Number of consecutive connection failures after which the retry delay is capped at 60s instead of backing off further. Defaults to `0` (pure exponential backoff, 3s to 60s). Since v0.32.0 this option no longer reboots the ESP32: one unreachable lock must not take down the BLE presence scanner and the Bluetooth proxy running on the same device.
 * **always_connect** (*Optional*, bool): Keep connection with SESAME. Must be `true` when this component contains `lock` object. Defaults to `true`. If set to `false`, disconnect from SESAME after receiving the status (and reconnect if `update_interval` is set).
 * **update_interval** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Request SESAME to send current status with this interval. Some devices (SESAME Touch) do not send updated status without this option. Defaults to `never`.
 * **lock** (*Optional*, sesame_lock): Lock specific configurations. See [below](#lock-specific-variables).
@@ -677,7 +677,14 @@ id(lock_1).lock(history_tag_type, tag);
 id(lock_1).unlock(history_tag_type, tag);
 ```
 
-See [explanation of history_tag_type](#history-tag-uuid-and-history-tag-type). It's useful when relaying requests in [esphome-sesame_server](https://github.com/homy-newfs8/esphome-sesame_server).
+See [explanation of history_tag_type](#history-tag-uuid-and-history-tag-type). The tag type records which kind of source triggered the operation in the SESAME history.
+
+> [!IMPORTANT]
+> Since v0.32.0 the `sesame` component cannot be combined with
+> [esphome-sesame_server](https://github.com/homy-newfs8/esphome-sesame_server)
+> (`CONFLICTS_WITH = ["sesame_server"]`). The server integration relied on the
+> removed private NimBLE client. Use `always_connect: true` and an
+> `update_interval` for Touch / Remote style devices instead.
 
 # Multiple SESAME conotrol
 

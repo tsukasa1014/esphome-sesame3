@@ -110,6 +110,14 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	std::array<Fragment, TX_QUEUE_SIZE> tx_queue_{};
 	size_t tx_head_ = 0;
 	size_t tx_count_ = 0;
+	// The parent client only guards DISCONNECTING, so bound this side too and fall
+	// back to cycling the BLE stack when the controller stops delivering events.
+	static constexpr uint32_t DISCONNECT_TIMEOUT_MS = 15'000;
+	static constexpr uint32_t BLE_RESTART_TIMEOUT_MS = 30'000;
+	static constexpr uint8_t MAX_STUCK_CYCLES = 3;
+	uint8_t stuck_cycles_ = 0;
+	bool ble_restart_pending_ = false;
+	uint32_t ble_restart_started_ = 0;
 	union {
 		uint8_t value;
 		struct {

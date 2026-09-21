@@ -1,4 +1,5 @@
 #include "sesame_component.h"
+#include <esphome/components/esp32_ble/ble.h>
 #include <esphome/core/log.h>
 #include <libsesame3bt/ServerCore.h>
 #include <libsesame3bt/util.h>
@@ -222,10 +223,43 @@ void SesameComponent::loop() {
   const auto client_state = ble_client_->state();
   if (feature) feature->loop();
 
+  // A controller that accepted an open but never delivered its events leaves the
+  // parent client stuck in CONNECTING, which no state in this component can leave.
+  // Cycling the ESPHome BLE stack recovers that without rebooting the node, so the
+  // Wi-Fi, the API and the presence scanner keep running.
+  if (ble_restart_pending_) {
+    if (esp32_ble::global_ble != nullptr &&
+        (!esp32_ble::global_ble->is_active() || now - ble_restart_started_ > BLE_RESTART_TIMEOUT_MS)) {
+      esp32_ble::global_ble->enable();
+      ble_restart_pending_ = false;
+      ESP_LOGW(TAG, "BLE stack re-enabled after repeated connection stalls");
+    }
+    return;
+  }
+
   // Also handles stack disable/re-enable and the parent's lost CLOSE_EVT recovery.
   if ((client_state == ClientState::IDLE || client_state == ClientState::INIT) &&
       my_state != state_t::not_connected) {
     schedule_retry_();
+    return;
+  }
+  // The parent only bounds DISCONNECTING (10s). If it never got there, or lost the
+  // CLOSE_EVT, force the link closed and start a fresh attempt instead of waiting
+  // forever in wait_disconnected.
+  if (my_state == state_t::wait_disconnected && now - state_started > DISCONNECT_TIMEOUT_MS) {
+    if (client_state != ClientState::IDLE && client_state != ClientState::INIT) {
+      ESP_LOGW(TAG, "Disconnect did not complete; forcing the link closed");
+      ble_client_->unconditional_disconnect();
+      if (++stuck_cycles_ >= MAX_STUCK_CYCLES && esp32_ble::global_ble != nullptr) {
+        stuck_cycles_ = 0;
+        ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack");
+        esp32_ble::global_ble->disable();
+        ble_restart_pending_ = true;
+        ble_restart_started_ = now;
+      }
+    }
+    reset_session_();
+    set_state(state_t::not_connected);
     return;
   }
   if (transport_failed_ || (write_pending_ && now - write_started_ > 5000)) {
@@ -251,6 +285,7 @@ void SesameComponent::loop() {
   if (my_state == state_t::authenticating) {
     if (subscribed_ && sesame.is_session_active()) {
       connect_tried = 0;
+      stuck_cycles_ = 0;
       retry_delay_ = 0;
       set_state(state_t::running);
       publish_connection_state(true);

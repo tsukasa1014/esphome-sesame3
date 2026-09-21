@@ -130,14 +130,41 @@ def is_lockable_model(model):
 
 
 def validate_standard_ble(config):
+    """Reject a leftover NimBLE stack and an undersized BLE connection pool.
+
+    Both are much easier to diagnose here than as a door lock that silently fails
+    to connect at runtime.
+    """
     full = fv.full_config.get()
     options = full.get("esp32", {}).get("framework", {}).get("sdkconfig_options", {})
     if str(options.get("CONFIG_BT_NIMBLE_ENABLED", "n")).lower() in ("y", "true", "1"):
-        raise cv.Invalid("Remove CONFIG_BT_NIMBLE_ENABLED and the old NimBLE build options; sesame uses ESPHome standard BLE")
+        raise cv.Invalid(
+            "Remove CONFIG_BT_NIMBLE_ENABLED and the other CONFIG_BT_NIMBLE_* options; "
+            "sesame uses the ESPHome standard BLE stack (Bluedroid)"
+        )
+    leftovers = sorted(key for key in options if key.startswith("CONFIG_BT_NIMBLE_"))
+    if leftovers:
+        _LOGGER.warning(
+            "sesame no longer uses NimBLE; these sdkconfig options have no effect and can be removed: %s",
+            ", ".join(leftovers),
+        )
     used = CORE.data.get(esp32_ble.KEY_ESP32_BLE, {}).get(esp32_ble.KEY_USED_CONNECTION_SLOTS, [])
     maximum = full.get("esp32_ble", {}).get("max_connections", esp32_ble.DEFAULT_MAX_CONNECTIONS)
     if len(used) > maximum:
-        raise cv.Invalid(f"BLE clients require {len(used)} slots; set esp32_ble.max_connections to at least {len(used)}")
+        hint = ""
+        if "max_connections" in full.get("esp32_ble_tracker", {}):
+            # esp32_ble only warns about the deprecated location and keeps using its
+            # own default, so that value cannot be honoured here either.
+            hint = (
+                " Note: max_connections under esp32_ble_tracker is deprecated and ignored;"
+                " move it to esp32_ble."
+            )
+        raise cv.Invalid(
+            f"BLE components reserve {len(used)} connection slots "
+            f"({', '.join(sorted(set(used)))}) but esp32_ble.max_connections is {maximum}. "
+            f"Set esp32_ble.max_connections to at least {len(used)}; every SESAME keeps its own "
+            f"slot because it stays connected.{hint}"
+        )
 
 
 FINAL_VALIDATE_SCHEMA = validate_standard_ble
@@ -173,7 +200,7 @@ def validate_lockable(config: ConfigType) -> ConfigType:
 
 
 def validate_always_connect(config: ConfigType) -> ConfigType:
-    if CONF_ALWAYS_CONNECT and not config[CONF_ALWAYS_CONNECT]:
+    if not config[CONF_ALWAYS_CONNECT]:
         if CONF_LOCK in config or CONF_BOT in config:
             raise cv.Invalid("When using `lock` or `bot`, `always_connect` must be True")
     return config
