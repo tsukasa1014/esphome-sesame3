@@ -1,0 +1,26 @@
+# Address discovery path: `sesame_ble` on its own, without any `sesame:` entry.
+# The docs tell users to enable this to find SESAME BLE addresses, so it has to
+# build by itself. It also pins the libsesame3bt-core CMAC fallback fix: without
+# -DUSE_FRAMEWORK_MBEDTLS_CMAC the library tries to include mbedtls/config.h.
+esphome:
+  name: sesame-ble-only-test
+  min_version: 2026.9.0
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  toolchain: platformio
+  framework:
+    type: esp-idf
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [sesame, sesame_ble]
+logger:
+  level: DEBUG
+api:
+wifi:
+  ssid: test-network
+  password: test-password
+esp32_ble_tracker:
+sesame_ble:

@@ -7,8 +7,11 @@ standard-BLE port by hand. All addresses, UUIDs and secrets in them are fake.
 | --- | --- |
 | `sesame5.yaml` | Minimal single SESAME 5 with a lock, connection and battery sensors. |
 | `sesame_minimal_no_ble.yaml` | Upgrade path: only `sesame:` is declared. `esp32_ble`, `esp32_ble_tracker` and `esp32_ble_client` must be auto-loaded. |
+| `sesame_touch_poll.yaml` | SESAME Touch in polling mode (`always_connect: false` plus `update_interval`). |
 | `sesame_merged.yaml` | The merged entrance node: 2x SESAME 5 + 1x SESAME Touch, `esp32_ble_tracker` with an iBeacon presence lambda, `bluetooth_proxy` with 2 slots, PSRAM and `esp32_ble.max_connections: 5`. |
 | `sesame_merged_arduino.yaml` | The same merged node on `framework: type: arduino`, which the existing SESAME configuration uses. |
+| `sesame_ble_scan.yaml` | `sesame_ble:` plus one SESAME 5, so `sesame_ble.cpp` is compiled. |
+| `sesame_ble_only.yaml` | `sesame_ble:` alone, the documented address-discovery setup. |
 | `reject_nimble_sdkconfig.yaml` | Must fail: `CONFIG_BT_NIMBLE_ENABLED: y` in `esp32.framework.sdkconfig_options`. |
 | `reject_too_few_connection_slots.yaml` | Must fail: 5 BLE clients with `esp32_ble.max_connections: 2`. |
 
@@ -46,9 +49,16 @@ That is the check that the ESPHome stack is the only BLE backend in the image.
 
 | Fixture | Framework | Result |
 | --- | --- | --- |
-| `sesame_merged.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 17.4% (56968/327680), Flash 14.1% (1146579/8126464) |
-| `sesame_merged_arduino.yaml` | arduino | SUCCESS, RAM 17.6% (57776/327680), Flash 15.0% (1222795/8126464) |
+| `sesame_merged.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 17.4% (56992/327680), Flash 14.1% (1147179/8126464) |
+| `sesame_merged.yaml` via `type: git` from the fork | esp-idf 5.5.5 | SUCCESS, RAM 17.2% (56488/327680), Flash 13.9% (1132051/8126464) |
+| `sesame_merged_arduino.yaml` | arduino | SUCCESS, RAM 17.6% (57800/327680), Flash 15.1% (1223407/8126464) |
+| `sesame_ble_scan.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 18.9% (62044/327680), Flash 13.4% (1088971/8126464) |
+| `sesame_ble_only.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 18.4% (60284/327680), Flash 13.0% (1052379/8126464) |
 
 Both images report `CONFIG_BT_BLUEDROID_ENABLED=y`, `# CONFIG_BT_NIMBLE_ENABLED is not set`,
 `CONFIG_BT_GATTC_ENABLE=y`, `CONFIG_MBEDTLS_CMAC_C=y`, and no warnings from the component
 under `-Wall -Wextra`.
+
+`sesame_ble` builds on its own only because it also selects the framework CMAC: without
+`-DUSE_FRAMEWORK_MBEDTLS_CMAC`, `libsesame3bt-core` compiles its own CMAC fallback and
+fails on the missing `mbedtls/config.h`.

@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import esp32_ble_tracker
+from esphome.components import esp32, esp32_ble_tracker
 from esphome.const import CONF_ID
 
 DEPENDENCIES = ["esp32_ble_tracker"]
@@ -20,3 +20,9 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await esp32_ble_tracker.register_ble_device(var, config)
     cg.add_library("libsesame3bt-core", None, "https://github.com/homy-newfs8/libsesame3bt-core#v0.50.0")
+    # libsesame3bt-core builds its own CMAC fallback unless the framework CMAC is
+    # selected, and that fallback needs mbedtls/config.h, which is not on a
+    # PlatformIO library include path. The advertisement scanner does not use CMAC
+    # itself, but PlatformIO compiles the whole library.
+    cg.add_build_flag("-DUSE_FRAMEWORK_MBEDTLS_CMAC")
+    esp32.add_idf_sdkconfig_option("CONFIG_MBEDTLS_CMAC_C", True)
