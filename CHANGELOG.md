@@ -22,27 +22,20 @@
   - `sesame` can no longer be combined with `esphome-sesame_server` (`CONFLICTS_WITH = ["sesame_server"]`).
     Use `always_connect: true` plus `update_interval` for Touch / Remote style devices.
 - Requires ESPHome 2026.9.0 or later (`min_version`).
-- Fixes found in the standard-BLE review:
-  - `unlock(tag)` with a string tag (a NaN `history_tag_type`) sent a **lock** command.
-    The inverted call existed in v0.31.0 as well; the tagged `unlock` now unlocks.
-  - Measurements are no longer published before the session is authenticated.
-    `libsesame3bt-core` accepts plaintext notifications, so a state received while the
-    device was still authenticating must not reach the lock and battery sensors.
-  - A normal polling disconnect (`always_connect: false`) keeps the last battery values
-    instead of blanking them, and `unknown_state_timeout` now really applies: the lock
-    keeps its state for the grace period and only then reports `NONE`.
-  - The "link never opened" recovery path now feeds the same stalled-controller counter
-    as the disconnect watchdog, and a connection attempt that the controller rejects
-    synchronously goes through the configured retry backoff instead of retrying per
-    advertisement.
-  - The first-generation SESAME bot now also updates `all_history_*`, which is
-    documented as "every history event".
-  - `sesame_ble` names the Touch 2 / Face 2 / Bot 3 / BLE Connector models instead of
-    reporting `UNKNOWN`.
-  - Documentation: the sample `external_components` block points at the fork branch that
-    carries the port, the retry description matches the implementation, the history
-    lambda example no longer prints decrypted tags, and the security notes describe the
-    library's plaintext acceptance and the `text_sensor` VERBOSE logging.
+- 標準BLE移植のレビューで見つかった問題の修正:
+  - 文字列タグ（`history_tag_type` が NaN）での `unlock(tag)` が **lock** コマンドを送っていた。
+    この取り違えは v0.31.0 から存在し、タグ付き `unlock` が正しく解錠するようになった。
+  - 認証が完了する前に測定値を公開しないようにした。`libsesame3bt-core` は平文通知を受理するため、
+    認証中に届いた状態をロック・電池センサーへ反映してはいけない。
+  - 正常なポーリング切断（`always_connect: false`）では最後の電池値を保持し、
+    `unknown_state_timeout` が実際に機能するようにした（猶予時間の経過後に `NONE` を報告する）。
+  - 「リンクが開かない」復旧経路も切断ウォッチドッグと同じ停滞カウンタに合流させ、
+    コントローラが同期拒否した接続試行も設定した再試行バックオフを通るようにした。
+  - 初代SESAME botでも `all_history_*` を更新するようにした（仕様は「全履歴イベント」）。
+  - `sesame_ble` が Touch 2 / Face 2 / Bot 3 / BLE Connector を `UNKNOWN` ではなく名前で表示する。
+  - ドキュメント: サンプルの `external_components` を移植版を含むforkブランチへ変更、再試行の説明を実装どおりに修正、
+    履歴lambdaの例から復号タグの出力を削除、セキュリティ上の注意にライブラリの平文受理と `text_sensor` の
+    VERBOSEログを記載。
 
 ## [v0.31.0] 2026-08-23
 - Bump libsesame3bt to 0.50.0

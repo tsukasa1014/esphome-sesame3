@@ -9,10 +9,9 @@ esphome:
 external_components:
   - source:
       type: git
-      # The standard-BLE port is not released on homy-newfs8/esphome-sesame3 yet
-      # (upstream is still v0.31.0 / NimBLE), so this points at the fork branch
-      # that carries it. Switch back to the upstream URL and a release tag once
-      # v0.32.0 exists.
+      # 標準BLE対応版は homy-newfs8/esphome-sesame3 ではまだリリースされていない
+      # （本家は v0.31.0 / NimBLE のまま）。そのため移植版を含むforkブランチを指す。
+      # v0.32.0 がタグ付けされたら本家URLとリリースタグへ戻してよい。
       url: https://github.com/tsukasa1014/esphome-sesame3
       ref: codex/esphome-standard-ble
     components: [sesame, sesame_ble]
@@ -129,10 +128,10 @@ sesame:
       ##   lambda: id(lock_1).lock("More specific value")
       ## See example above api: services: section.
       tag: "My awesome system"
-      ## Send NONE (or unknown_state_alternative) to Home Assistant once the SESAME
-      ## has been unreachable for this long. Defaults to 20s. `0s` disables the grace period.
+      ## SESAMEがこの時間だけ到達不能になったら、Home Assistantへ NONE（または
+      ## unknown_state_alternative）を送る。既定は 20s。`0s` で猶予なし。
       # unknown_state_timeout: 20s
-      ## Report JAMMED instead of NONE when the state is unknown
+      ## 状態不明のときに NONE の代わりに JAMMED を報告する
       # unknown_state_alternative: JAMMED
       ## expose operation history tag text
       history_tag:
@@ -169,15 +168,15 @@ sesame:
     ##
     ## BLE connection timeout
     # timeout: 10s
-    ## Number of consecutive connection failures after which the retry delay is capped
-    ## at 60s instead of backing off further (0 = pure backoff, 3s to 48s + jitter).
-    ## This does not reboot the ESP32; recovery from a stalled controller is handled by
-    ## restarting the ESPHome BLE stack.
+    ## 連続してこの回数だけ接続に失敗すると、再試行間隔を60秒固定にし、カウンタを
+    ## リセットする（0 = 固定へ切り替えず、3s〜48s＋ゆらぎの指数バックオフのみ）。
+    ## ESP32の再起動はしない。コントローラ停滞からの復旧はESPHomeのBLEスタック
+    ## 再起動で行う。
     # connect_retry_limit: 0
 
-  ## You can specify and control multiple SESAME devices with one ESP32.
-  ## A device that cannot connect is retried with a backoff and does not reboot the module,
-  ## so stable and unstable devices can share one ESP32.
+  ## 1台のESP32で複数のSESAMEを指定・操作できる。
+  ## 接続できない機器はバックオフしながら再試行し、モジュールを再起動しないので、
+  ## 安定した機器と不安定な機器を同じESP32に載せてよい。
   ##
   # - id: lock2
   #   model: sesame_3

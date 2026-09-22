@@ -27,18 +27,17 @@
 > NimBLE `sdkconfig_options` (`CONFIG_BT_NIMBLE_*`) when upgrading; the
 > component rejects a configuration that still enables NimBLE.
 
-## Security notes
+## セキュリティ上の注意
 
-- Keep `LIBSESAME3BTCORE_DEBUG` off. The component fails the build when it is
-  enabled, because the library's protocol debug prints decrypted payloads.
-- `history_tag` / `all_history_tag` publish decrypted history data. ESPHome logs
-  text_sensor values at `VERBOSE`, so keep `logger:` at `DEBUG` or lower when the
-  tags must not reach the device log, and do not print them from lambdas.
-- Known limitation: `libsesame3bt-core` accepts plaintext notifications and treats a
-  plaintext login response as a completed login (`transport.cpp`, `os3.cpp`). The
-  component now holds measurements until the session is authenticated, but the root
-  fix belongs in the library. Until that lands, treat a state that appeared while the
-  device was still authenticating as unverified.
+- `LIBSESAME3BTCORE_DEBUG` は無効のままにすること。有効にするとビルドが失敗する
+  （ライブラリのプロトコルデバッグが復号済みペイロードを表示するため）。
+- `history_tag` / `all_history_tag` は復号済みの履歴データを公開する。ESPHome は
+  text_sensor の値を `VERBOSE` でログ出力するので、タグをデバイスログに残したくない
+  場合は `logger:` を `DEBUG` 以下にし、lambda からも値を出力しないこと。
+- 既知の制限: `libsesame3bt-core` は平文通知を受理し、平文の login 応答をログイン成功
+  として扱う（`transport.cpp` / `os3.cpp`）。コンポーネント側は認証が完了するまで
+  測定値の公開を保留するようにしたが、根本的な修正はライブラリ側に必要。修正が入る
+  までは、認証中に現れた状態は「未検証」として扱うこと。
 
 # Setup this component
 
@@ -48,19 +47,18 @@ You need to add compiler / library options to ESPHome base configuration, and `e
 external_components:
   - source:
       type: git
-      # The standard-BLE port is not released on homy-newfs8/esphome-sesame3 yet
-      # (upstream is still v0.31.0 / NimBLE), so this points at the fork branch
-      # that carries it. Switch back to the upstream URL and a release tag once
-      # v0.32.0 exists.
+      # 標準BLE対応版は homy-newfs8/esphome-sesame3 ではまだリリースされていない
+      # （本家は v0.31.0 / NimBLE のまま）。そのため移植版を含むforkブランチを指す。
+      # v0.32.0 がタグ付けされたら本家URLとリリースタグへ戻してよい。
       url: https://github.com/tsukasa1014/esphome-sesame3
       ref: codex/esphome-standard-ble
     components: [ sesame, sesame_ble ]
 ```
 
 > [!NOTE]
-> `v0.32.0` will be the first release with the ESPHome standard BLE stack. Until
-> that tag exists on `homy-newfs8/esphome-sesame3`, use the fork URL and branch shown
-> above (or a local checkout) instead of the upstream URL and a version tag.
+> `v0.32.0` が ESPHome 標準BLEスタックを含む最初のリリースになる予定。本家
+> `homy-newfs8/esphome-sesame3` にそのタグができるまでは、上に示した fork の URL と
+> ブランチ（またはローカルのチェックアウト）を使い、本家URLとバージョンタグは使わないこと。
 
 # Build options
 
@@ -181,7 +179,7 @@ See [below](#identify-parameter-values-for-sesame-devices) for information on ho
 * **secret** (**Required**, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **public_key** (**Required** for SESAME OS2 models, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **timeout** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Connection to SESAME timeout value. Defaults to `10s`.
-* **connect_retry_limit** (*Optional*, int): Number of consecutive connection failures after which the retry delay becomes a fixed 60s and the failure counter restarts, so a later burst of failures backs off from the beginning again. Defaults to `0`, which never switches to the fixed delay and keeps the exponential backoff (3s, 6s, 12s, 24s, 48s, then 48s) plus up to 1s of per-device jitter, so the SESAME devices do not retry in lockstep. Since v0.32.0 this option no longer reboots the ESP32: one unreachable lock must not take down the BLE presence scanner and the Bluetooth proxy running on the same device. Recovery from a BLE controller that stops delivering connection events is handled by restarting the ESPHome BLE stack (at most once every 5 minutes).
+* **connect_retry_limit** (*Optional*, int): 連続してこの回数だけ接続に失敗すると、再試行間隔を 60 秒固定にし、失敗カウンタをリセットする（次の失敗群はまた最初からバックオフする）。既定値は `0` で、固定の60秒には切り替わらず指数バックオフ（3s, 6s, 12s, 24s, 48s, 以降48s）に最大1秒の端末ごとのゆらぎ（ジッタ）が加わる。ゆらぎがあるため複数のSESAMEが同時に再試行しない。v0.32.0 以降このオプションはESP32を再起動しない: 1台の届かないロックのために、同じ基板上で動くBLE PresenceスキャナやBluetooth Proxyを止めてはいけないため。接続イベントを配信しなくなったBLEコントローラからの復旧は、ESPHomeのBLEスタック再起動で行う（最短5分間隔）。
 * **always_connect** (*Optional*, bool): Keep connection with SESAME. Must be `true` when this component contains `lock` object. Defaults to `true`. If set to `false`, disconnect from SESAME after receiving the status (and reconnect if `update_interval` is set).
 * **update_interval** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Request SESAME to send current status with this interval. Some devices (SESAME Touch) do not send updated status without this option. Defaults to `never`.
 * **lock** (*Optional*, sesame_lock): Lock specific configurations. See [below](#lock-specific-variables).
@@ -512,17 +510,17 @@ sesame:
       on_value:
         then:
           - lambda: |-
-              // `history_tag_1` holds the decrypted tag: a string for a TAG event, a
-              // UUID for a TAG UUID + history_tag_type event. Use it, but do not log
-              // it - ESPHome prints text_sensor values at VERBOSE, so anything you
-              // print here ends up in the device log as well.
+              // `history_tag_1` は復号済みのタグ。TAGイベントなら文字列、
+              // TAG UUID + history_tag_type イベントならUUIDが入る。
+              // 使ってよいがログには出さないこと。ESPHome は text_sensor の値を
+              // VERBOSE で出力するため、ここで表示した内容もデバイスログに残る。
               if (std::isnan(id(history_tag_type_1).state)) {
-                // TAG string received: compare it with a tag you expect
+                // 文字列タグを受信: 想定しているタグ名と比較する
                 if (id(history_tag_1).state == "front door") {
                   id(lock_1).unlock("front door tag");
                 }
               } else if ((int) id(history_tag_type_1).state == 1) {
-                // TAG UUID + history_tag_type received, type 1 = "Web API"
+                // TAG UUID + history_tag_type を受信。type 1 = "Web API"
                 id(lock_1).unlock("web api");
               }
 
