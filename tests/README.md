@@ -61,12 +61,12 @@ reject_too_few_connection_slots.yaml
 
 | Fixture | Framework | 結果 |
 | --- | --- | --- |
-| `sesame_merged.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 17.4% (57016/327680), Flash 14.1% (1147815/8126464) |
+| `sesame_merged.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 17.4% (57016/327680), Flash 14.1% (1147959/8126464) |
 | `sesame_merged.yaml`（forkから `type: git` で取得） | esp-idf 5.5.5 | SUCCESS, RAM 17.2% (56488/327680), Flash 13.9% (1132051/8126464) |
 | `sesame_merged_arduino.yaml` | arduino | SUCCESS, RAM 17.6% (57824/327680), Flash 15.1% (1224463/8126464) |
 | `sesame_ble_scan.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 18.9% (62044/327680), Flash 13.4% (1088971/8126464) |
 | `sesame_ble_only.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 18.4% (60284/327680), Flash 13.0% (1052379/8126464) |
-| `sesame_full_features.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 19.5% (63900/327680), Flash 13.4% (1091479/8126464) |
+| `sesame_full_features.yaml` | esp-idf 5.5.5 | SUCCESS, RAM 19.5% (63900/327680), Flash 13.4% (1091747/8126464) |
 
 どのイメージも `CONFIG_BT_BLUEDROID_ENABLED=y`、`# CONFIG_BT_NIMBLE_ENABLED is not set`、
 `CONFIG_BT_GATTC_ENABLE=y`、`CONFIG_MBEDTLS_CMAC_C=y` で、`-Wall -Wextra` での
