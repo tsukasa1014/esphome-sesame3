@@ -25,6 +25,7 @@ class SesameBLEClient : public esp32_ble_client::BLEClientBase {
                            esp_ble_gattc_cb_param_t *param) override;
   void set_state(esp32_ble_tracker::ClientState st) override;
   void connect() override;
+  void on_disconnect_complete(esp_err_t reason) override;
 
  private:
   SesameComponent *owner_{nullptr};

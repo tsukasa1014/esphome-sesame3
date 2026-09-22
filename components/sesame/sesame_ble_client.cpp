@@ -36,4 +36,14 @@ bool SesameBLEClient::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
   return true;
 }
 
+void SesameBLEClient::on_disconnect_complete(esp_err_t reason) {
+  esp32_ble_client::BLEClientBase::on_disconnect_complete(reason);
+  // The parent calls this from CLOSE_EVT and from the two places that settle a link
+  // without one: the 10s DISCONNECTING watchdog and the BLE stack teardown. Only the
+  // watchdog is an event loss the owner has to count; CLOSE_EVT and the teardown that
+  // follows our own disconnect are expected.
+  if (reason == ESP_GATT_CONN_TIMEOUT && this->owner_ != nullptr)
+    this->owner_->on_watchdog_disconnect();
+}
+
 }  // namespace esphome::sesame_lock

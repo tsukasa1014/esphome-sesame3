@@ -9,9 +9,9 @@
 | `sesame_minimal_no_ble.yaml` | 移行経路。`sesame:` だけを書いた構成で、`esp32_ble` / `esp32_ble_tracker` / `esp32_ble_client` が自動読み込みされること。 |
 | `sesame_touch_poll.yaml` | SESAME Touch のポーリング動作（`always_connect: false` と `update_interval`）。 |
 | `sesame_touch_no_interval.yaml` | 有効なままだが警告が出ること: `always_connect: false` と `update_interval: never` の組み合わせは一度も接続しない。 |
-| `sesame_full_features.yaml` | 既存設定が使うオプション面。全 `history_*` / `all_history_*` センサー付きのOS3ロック、`running_sensor` 付きのOS3 Bot、公開lock API（タグなし・タグ付き・NaNタグ型）を呼ぶボタン。 |
+| `sesame_full_features.yaml` | 既存設定が使うオプション面。全 `history_*` / `all_history_*` センサー付きのOS3ロック、`running_sensor` 付きのOS3 Bot、公開lock APIの3経路（タグなし・文字列タグ＝NaNタグ型・16バイトUUIDタグ＝タグ種別つき）を呼ぶボタン。 |
 | `sesame_merged.yaml` | 玄関の統合構成。SESAME 5 ×2 + SESAME Touch ×1、iBeacon Presence のlambda付き `esp32_ble_tracker`、2スロットの `bluetooth_proxy`、PSRAM、`esp32_ble.max_connections: 5`。 |
-| `sesame_merged_arduino.yaml` | 既存のSESAME設定が使う `framework: type: arduino` での縮小版。SESAME 5 が1台、iBeacon Presence のlambda、`bluetooth_proxy`。Arduinoフレームワークでもビルドできることの確認用で、全オプションの網羅は `sesame_merged.yaml` と `sesame_full_features.yaml` が担当する。 |
+| `sesame_merged_arduino.yaml` | 既存のSESAME設定が使う `framework: type: arduino` での共存確認用。SESAME 5 ×2 + Touch、iBeacon UUIDの一致だけでRSSIを出す簡易Presence、`bluetooth_proxy` 2スロット。存在判定のタイムアウトやmajor/minor判定など統合版のPresenceロジックは含まない。全オプションの網羅は `sesame_merged.yaml` と `sesame_full_features.yaml` が担当する。 |
 | `sesame_ble_scan.yaml` | `sesame_ble:` と SESAME 5 を1台。`sesame_ble.cpp` をコンパイル対象に入れるため。 |
 | `sesame_ble_only.yaml` | `sesame_ble:` のみ。ドキュメントに載っているアドレス調査手順そのもの。 |
 | `reject_nimble_sdkconfig.yaml` | 失敗すること: `esp32.framework.sdkconfig_options` に `CONFIG_BT_NIMBLE_ENABLED: y`。 |
@@ -55,8 +55,9 @@ reject_too_few_connection_slots.yaml
 
 ## 直近の実行結果
 
-以下はすべて ESPHome 2026.9.0 と、これらの修正を含むブランチ先頭で取得した。数値は
-ビルドごとに数百バイト変動するので、しきい値ではなく目安として扱うこと。
+以下はすべて ESPHome 2026.9.0 と、コード修正を含むブランチ先頭で取得した。数値は
+ビルドごとに数百バイト変動するので、しきい値ではなく目安として扱うこと。表の「取得元」列は
+どの時点のビルドかを示す（`type: git` の行はforkからの取得経路の確認）。
 
 | Fixture | Framework | 結果 |
 | --- | --- | --- |

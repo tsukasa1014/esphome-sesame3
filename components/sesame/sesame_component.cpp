@@ -86,6 +86,7 @@ void SesameComponent::reset_session_(bool keep_measurements) {
     // Abnormal end (timeout, protocol error, stalled controller): blank the values, as
     // v0.31.0 did. A clean end of a polling cycle keeps them, and the lock's
     // unknown_state_timeout decides when the lock state itself becomes unknown.
+    polling_complete_ = false;
     sesame_status.reset();
     reflect_sesame_status();
   }
@@ -94,7 +95,16 @@ void SesameComponent::reset_session_(bool keep_measurements) {
 
 void SesameComponent::schedule_retry_() {
   ble_client_->set_auto_connect(false);
-  reset_session_();
+  // A polling cycle that ended normally is not a failure: keep the values we just read
+  // and skip the backoff, so the next update_interval reconnects right away.
+  const bool clean_end = polling_complete_;
+  polling_complete_ = false;
+  reset_session_(clean_end);
+  if (clean_end) {
+    retry_started_ = millis();
+    set_state(state_t::not_connected);
+    return;
+  }
   if (connect_tried < UINT16_MAX) ++connect_tried;
   uint32_t base = 3000U << std::min<unsigned>(connect_tried - 1, 4);
   retry_delay_ = std::min<uint32_t>(base, 60000) + (ble_client_->get_address() % 997);
@@ -109,6 +119,7 @@ void SesameComponent::schedule_retry_() {
 
 void SesameComponent::disconnect(bool keep_measurements) {
   ble_client_->set_auto_connect(false);
+  if (keep_measurements) polling_complete_ = true;
   reset_session_(keep_measurements);
   set_state(state_t::wait_disconnected);
   ble_client_->disconnect();
@@ -252,6 +263,8 @@ void SesameComponent::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
       break;
     case ESP_GATTC_DISCONNECT_EVT:
     case ESP_GATTC_CLOSE_EVT:
+      // A real close arrived, so this was not a lost-event settle.
+      watchdog_pending_ = false;
       if (my_state != state_t::not_connected && my_state != state_t::wait_disconnected) {
         reset_session_();
         ble_client_->set_auto_connect(false);
@@ -304,6 +317,15 @@ void SesameComponent::loop() {
     ESP_LOGW(TAG, "Connection attempt was rejected by the controller");
     schedule_retry_();
     return;
+  }
+
+  // The parent settled the link with a connection timeout and no CLOSE_EVT arrived, so
+  // the controller stopped reporting events. Feed the same escalation as our own
+  // watchdog; a real CLOSE_EVT clears the flag before the loop sees it.
+  if (watchdog_pending_) {
+    watchdog_pending_ = false;
+    ESP_LOGW(TAG, "Disconnect did not complete; the controller stopped reporting events");
+    note_stalled_link_();
   }
 
   // Also handles stack disable/re-enable and the parent's lost CLOSE_EVT recovery.

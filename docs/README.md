@@ -31,9 +31,14 @@
 
 - `LIBSESAME3BTCORE_DEBUG` は無効のままにすること。有効にするとビルドが失敗する
   （ライブラリのプロトコルデバッグが復号済みペイロードを表示するため）。
-- `history_tag` / `all_history_tag` は復号済みの履歴データを公開する。ESPHome は
-  text_sensor の値を `VERBOSE` でログ出力するので、タグをデバイスログに残したくない
-  場合は `logger:` を `DEBUG` 以下にし、lambda からも値を出力しないこと。
+- `history_tag` / `all_history_tag` / `history_extra` / `all_history_extra` は復号済みの
+  履歴データを公開する。ESPHome は text_sensor の値を `VERBOSE` でログ出力するため、
+  値をデバイスログに残したくない場合は次の運用で回避する。
+  - `logger:` を `DEBUG` 以下に保つ（個々の text_sensor に `log_level: VERBOSE` を
+    付けない）。
+  - lambda からもタグ・extra の値を出力しない。
+  これは実装で出力を止めたのではなく、**ログレベルによる制約付きの回避**である。
+  完全な抑止が必要なら、履歴TextSensorの値ログを抑止する仕組みを別途用意する必要がある。
 - 既知の制限: `libsesame3bt-core` は平文通知を受理し、平文の login 応答をログイン成功
   として扱う（`transport.cpp` / `os3.cpp`）。コンポーネント側は認証が完了するまで
   測定値の公開を保留するようにしたが、根本的な修正はライブラリ側に必要。修正が入る
@@ -179,7 +184,7 @@ See [below](#identify-parameter-values-for-sesame-devices) for information on ho
 * **secret** (**Required**, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **public_key** (**Required** for SESAME OS2 models, string): See [below](#identify-parameter-values-for-sesame-devices).
 * **timeout** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Connection to SESAME timeout value. Defaults to `10s`.
-* **connect_retry_limit** (*Optional*, int): 連続してこの回数だけ接続に失敗すると、再試行間隔を 60 秒固定にし、失敗カウンタをリセットする（次の失敗群はまた最初からバックオフする）。既定値は `0` で、固定の60秒には切り替わらず指数バックオフ（3s, 6s, 12s, 24s, 48s, 以降48s）に最大1秒の端末ごとのゆらぎ（ジッタ）が加わる。ゆらぎがあるため複数のSESAMEが同時に再試行しない。v0.32.0 以降このオプションはESP32を再起動しない: 1台の届かないロックのために、同じ基板上で動くBLE PresenceスキャナやBluetooth Proxyを止めてはいけないため。接続イベントを配信しなくなったBLEコントローラからの復旧は、ESPHomeのBLEスタック再起動で行う（最短5分間隔）。
+* **connect_retry_limit** (*Optional*, int): 連続してこの回数だけ接続に失敗すると、再試行間隔を 60 秒固定にし、失敗カウンタをリセットする（次の失敗群はまた最初からバックオフする）。既定値は `0` で、固定の60秒には切り替わらず指数バックオフ（3s, 6s, 12s, 24s, 48s, 以降48s）に最大1秒の端末ごとのゆらぎ（ジッタ）が加わる。ゆらぎがあるため複数のSESAMEが同時に再試行しない。v0.32.0 以降このオプションはESP32を再起動しない: 1台の届かないロックのために、同じ基板上で動くBLE PresenceスキャナやBluetooth Proxyを止めてはいけないため。接続イベントを配信しなくなったBLEコントローラからの復旧は、まずESPHomeのBLEスタック再起動で行い、各SESAMEは直近の再起動要求から10分以上あけて次の要求を出す（この間隔はSESAMEごとに保持しているため、共有スタック全体の再起動頻度を保証するものではない）。それでも復旧しない場合の最終手段としてESP32本体の再起動が残っている。
 * **always_connect** (*Optional*, bool): Keep connection with SESAME. Must be `true` when this component contains `lock` object. Defaults to `true`. If set to `false`, disconnect from SESAME after receiving the status (and reconnect if `update_interval` is set).
 * **update_interval** (*Optional*, [Time](https://esphome.io/guides/configuration-types#config-time)): Request SESAME to send current status with this interval. Some devices (SESAME Touch) do not send updated status without this option. Defaults to `never`.
 * **lock** (*Optional*, sesame_lock): Lock specific configurations. See [below](#lock-specific-variables).
@@ -515,16 +520,20 @@ sesame:
               // 使ってよいがログには出さないこと。ESPHome は text_sensor の値を
               // VERBOSE で出力するため、ここで表示した内容もデバイスログに残る。
               if (std::isnan(id(history_tag_type_1).state)) {
-                // 文字列タグを受信: 想定しているタグ名と比較する
-                if (id(history_tag_1).state == "front door") {
-                  id(lock_1).unlock("front door tag");
+                // 文字列タグを受信（タグ種別なし）
+              } else {
+                // タグ種別つき。値は history_tag_type_t
+                // 例: 0=nfc_card, 1=fingerprint, 13=web_api
+                const int tag_type = (int) id(history_tag_type_1).state;
+                if (tag_type == 13) {
+                  // Web API 経由の操作として記録された
                 }
-              } else if ((int) id(history_tag_type_1).state == 1) {
-                // TAG UUID + history_tag_type を受信。type 1 = "Web API"
-                id(lock_1).unlock("web api");
               }
-
 ```
+
+この例は**値の見分け方だけ**を示す。履歴は施錠の記録も解錠の記録も同じ経路で届くため、
+ここに `unlock()` などを書くと、履歴が1件届くだけで扉が解錠され得る。履歴を契機に操作
+したい場合は、履歴表示の例に混ぜず、許可条件を明示した別のautomationとして設計すること。
 
 ### History tag type values
 

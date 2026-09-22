@@ -76,7 +76,10 @@ SesameLock::test_unknown_state() {
 			auto now = esphome::millis();
 			if (unknown_state_started == 0) {
 				unknown_state_started = now;
-			} else if (unknown_state_timeout && now - unknown_state_started > unknown_state_timeout) {
+			}
+			// `unknown_state_timeout: 0s` means "no grace period": invalidate on the first
+			// loop after the session ended instead of holding the old value forever.
+			if (unknown_state_timeout == 0 || now - unknown_state_started > unknown_state_timeout) {
 				update_lock_state(lock::LOCK_STATE_NONE);
 				if (auto& hset = get_history_set(); hset.using_history()) {
 					hset.clear_received_values();
@@ -240,8 +243,9 @@ SesameLock::lock(float history_tag_type, std::string_view tag) {
 		return;
 	}
 	if (std::isnan(history_tag_type)) {
-		// Was lock(tag): a plain string tag (NaN tag type) sent the opposite command.
-		parent_->sesame.unlock(tag);
+		// A plain string tag (NaN tag type) must send the command this function is
+		// named after. v0.31.0 sent the opposite one here.
+		parent_->sesame.lock(tag);
 		return;
 	}
 	std::array<std::byte, libsesame3bt::HISTORY_TAG_UUID_SIZE> uuid;
@@ -258,7 +262,8 @@ SesameLock::unlock(float history_tag_type, std::string_view tag) {
 		return;
 	}
 	if (std::isnan(history_tag_type)) {
-		parent_->sesame.lock(tag);
+		// Was lock(tag): a plain string tag (NaN tag type) sent the opposite command.
+		parent_->sesame.unlock(tag);
 		return;
 	}
 	std::array<std::byte, libsesame3bt::HISTORY_TAG_UUID_SIZE> uuid;

@@ -137,9 +137,6 @@ class SesameLock : public lock::Lock, public Feature {
 	bool history_type_matched(lock::LockState, libsesame3bt::Sesame::history_type_t);
 	void handle_bot_history(const SesameProtocol::History& history);
 	bool is_bot1() const;
-	void set_battery_pct_sensor(sensor::Sensor* sensor, float scaled_voltage);
-	void set_history_sensors();
-	void publish_history_sensors();
 	void set_history_tag_sensor(history_set& hset, text_sensor::TextSensor* sensor) { hset.history_tag_sensor = sensor; }
 	void set_history_type_sensor(history_set& hset, sensor::Sensor* sensor) { hset.history_type_sensor = sensor; }
 	void set_history_tag_type_sensor(history_set& hset, sensor::Sensor* sensor) { hset.history_tag_type_sensor = sensor; }

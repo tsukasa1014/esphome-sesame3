@@ -64,6 +64,10 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	// Called by SesameBLEClient when the controller rejects a connection attempt
 	// synchronously, so the retry backoff still applies.
 	void on_connect_attempt_failed() { connect_attempt_failed_ = true; }
+	// Called by SesameBLEClient when the parent settled a link with a connection
+	// timeout. It stays pending until a real CLOSE_EVT/DISCONNECT_EVT arrives, so the
+	// loop can tell "the controller stopped reporting events" from "the peer went away".
+	void on_watchdog_disconnect() { watchdog_pending_ = true; }
 	virtual float get_setup_priority() const override { return setup_priority::AFTER_WIFI; };
 	virtual void update() override;
 
@@ -118,6 +122,10 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	uint8_t ble_restart_count_ = 0;
 	uint32_t last_ble_restart_ = 0;
 	bool connect_attempt_failed_ = false;
+	bool watchdog_pending_ = false;
+	// Set when a polling cycle ended normally, so the CLOSE that follows keeps the
+	// measured values and skips the failure backoff.
+	bool polling_complete_ = false;
 	union {
 		uint8_t value;
 		struct {

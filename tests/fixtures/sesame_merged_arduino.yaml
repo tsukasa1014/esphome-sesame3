@@ -1,6 +1,7 @@
-# Same merged entrance node as sesame_merged.yaml, but on the Arduino framework
-# that the existing SESAME configuration uses. The NimBLE sdkconfig_options are
-# gone; only the framework type differs from the esp-idf fixture.
+# 既存のSESAME設定が使う Arduino フレームワークで、統合構成を縮小したもの。
+# SESAME 5 ×2 + Touch、iBeacon UUID の一致だけでRSSIを出す簡易Presence、
+# Bluetooth Proxy 2スロット。存在判定のタイムアウトやmajor/minor判定など、
+# 統合版（sesame_merged.yaml）のPresenceロジックは含まない。
 substitutions:
   phone_ibeacon_uuid: "111803AB-A74F-4120-B0D6-84BA3B63FD83"
   phone_ibeacon_major: "41822"
