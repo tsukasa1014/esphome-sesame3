@@ -74,7 +74,7 @@ void SesameComponent::set_state(state_t next) {
   state_started = millis();
 }
 
-void SesameComponent::reset_session_() {
+void SesameComponent::reset_session_(bool keep_measurements) {
   sesame.on_disconnected();
   tx_head_ = tx_count_ = 0;
   write_pending_ = subscribed_ = status_pending_ = transport_failed_ = false;
@@ -82,7 +82,13 @@ void SesameComponent::reset_session_() {
   ble_client_->set_node_ready(false);
   // Queue may contain authentication material; clear it even though it is no longer scheduled.
   for (auto& fragment : tx_queue_) fragment = {};
-  make_unknown();
+  if (!keep_measurements) {
+    // Abnormal end (timeout, protocol error, stalled controller): blank the values, as
+    // v0.31.0 did. A clean end of a polling cycle keeps them, and the lock's
+    // unknown_state_timeout decides when the lock state itself becomes unknown.
+    sesame_status.reset();
+    reflect_sesame_status();
+  }
   publish_connection_state(false);
 }
 
@@ -101,9 +107,9 @@ void SesameComponent::schedule_retry_() {
   set_state(state_t::not_connected);
 }
 
-void SesameComponent::disconnect() {
+void SesameComponent::disconnect(bool keep_measurements) {
   ble_client_->set_auto_connect(false);
-  reset_session_();
+  reset_session_(keep_measurements);
   set_state(state_t::wait_disconnected);
   ble_client_->disconnect();
 }
@@ -120,7 +126,30 @@ bool SesameComponent::force_idle_if_unopened_() {
     return false;
   ESP_LOGW(TAG, "Link never opened; resetting the BLE client so scanning can resume");
   ble_client_->set_state(ClientState::IDLE);  // also clears the pending disconnect
+  // This is the main event-loss path, so it has to feed the same escalation as the
+  // wait_disconnected watchdog. Otherwise a wedged controller is never restarted.
+  note_stalled_link_();
   return true;
+}
+
+void SesameComponent::note_stalled_link_() {
+  if (++stuck_cycles_ < MAX_STUCK_CYCLES || esp32_ble::global_ble == nullptr)
+    return;
+  stuck_cycles_ = 0;
+  // Cycling the stack stops the presence scan and drops proxy links for a few
+  // seconds, so do it at most once every BLE_RESTART_MIN_INTERVAL_MS.
+  const auto now = millis();
+  if (now - last_ble_restart_ < BLE_RESTART_MIN_INTERVAL_MS) {
+    ESP_LOGW(TAG, "BLE controller stalled again; keeping the stack up for now");
+    return;
+  }
+  last_ble_restart_ = now;
+  ++ble_restart_count_;
+  ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack (#%u)", ble_restart_count_);
+  esp32_ble::global_ble->disable();
+  ble_restart_pending_ = true;
+  ble_restart_started_ = now;
+  ble_restart_attempts_ = 0;
 }
 
 bool SesameComponent::write_to_tx(const uint8_t* data, size_t size) {
@@ -269,6 +298,14 @@ void SesameComponent::loop() {
     ble_client_->unconditional_disconnect();
   }
 
+  // The controller rejected the attempt before we ever saw CONNECTING.
+  if (connect_attempt_failed_) {
+    connect_attempt_failed_ = false;
+    ESP_LOGW(TAG, "Connection attempt was rejected by the controller");
+    schedule_retry_();
+    return;
+  }
+
   // Also handles stack disable/re-enable and the parent's lost CLOSE_EVT recovery.
   if ((client_state == ClientState::IDLE || client_state == ClientState::INIT) &&
       my_state != state_t::not_connected) {
@@ -285,22 +322,8 @@ void SesameComponent::loop() {
       ble_client_->unconditional_disconnect();
       stalled = true;
     }
-    if (stalled && ++stuck_cycles_ >= MAX_STUCK_CYCLES && esp32_ble::global_ble != nullptr) {
-      stuck_cycles_ = 0;
-      // Cycling the stack stops the presence scan and drops proxy links for a few
-      // seconds, so do it at most once every BLE_RESTART_MIN_INTERVAL_MS.
-      if (now - last_ble_restart_ < BLE_RESTART_MIN_INTERVAL_MS) {
-        ESP_LOGW(TAG, "BLE controller stalled again; keeping the stack up for now");
-      } else {
-        last_ble_restart_ = now;
-        ++ble_restart_count_;
-        ESP_LOGW(TAG, "BLE controller stalled; restarting the ESPHome BLE stack (#%u)", ble_restart_count_);
-        esp32_ble::global_ble->disable();
-        ble_restart_pending_ = true;
-        ble_restart_started_ = now;
-        ble_restart_attempts_ = 0;
-      }
-    }
+    if (stalled)
+      note_stalled_link_();
     reset_session_();
     set_state(state_t::not_connected);
     return;
@@ -342,7 +365,13 @@ void SesameComponent::loop() {
       return;
     }
   }
-  if (status_pending_) {
+  // Hold the measurement until the session is authenticated. `libsesame3bt-core`
+  // accepts plaintext notifications, so anything that arrives while we are still
+  // `authenticating` (or from a peer that never finishes the handshake) must not
+  // reach the lock and battery sensors. The status carried by a legitimate login
+  // response is still published in the same loop pass, because the
+  // `authenticating` block above runs first.
+  if (status_pending_ && my_state == state_t::running) {
     status_pending_ = false;
     operation_requested.update_status = false;
     reflect_sesame_status();
@@ -354,7 +383,8 @@ void SesameComponent::loop() {
     }
     if (!always_connect && !operation_requested.update_status && sesame_status.has_value() &&
         tx_count_ == 0 && !write_pending_) {
-      disconnect();
+      // Polling finished normally: keep the values we just read until the next cycle.
+      disconnect(true);
       return;
     }
   }
@@ -372,11 +402,6 @@ void SesameComponent::update() {
 void SesameComponent::publish_connection_state(bool connected) {
   if (connection_sensor && (!connection_sensor->has_state() || connection_sensor->state != connected))
     connection_sensor->publish_state(connected);
-}
-
-void SesameComponent::make_unknown() {
-  sesame_status.reset();
-  reflect_sesame_status();
 }
 
 void

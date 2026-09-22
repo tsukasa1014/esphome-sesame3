@@ -135,7 +135,6 @@ class SesameLock : public lock::Lock, public Feature {
 	void publish_lock_history_state();
 	void publish_all_history_state();
 	bool history_type_matched(lock::LockState, libsesame3bt::Sesame::history_type_t);
-	void clear_history();
 	void handle_bot_history(const SesameProtocol::History& history);
 	bool is_bot1() const;
 	void set_battery_pct_sensor(sensor::Sensor* sensor, float scaled_voltage);

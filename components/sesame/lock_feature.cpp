@@ -67,7 +67,9 @@ SesameLock::init() {
 
 void
 SesameLock::test_unknown_state() {
-	if (parent_->sesame_status.has_value()) {
+	// The session, not the last measured value, decides whether the lock is stale:
+	// a normal polling disconnect keeps the values we just read.
+	if (parent_->my_state == state_t::running) {
 		unknown_state_started = 0;
 	} else {
 		if (lock_state != lock::LOCK_STATE_NONE) {
@@ -104,6 +106,13 @@ SesameLock::handle_bot_history(const SesameClient::History& history) {
 				hset.set_history_sensors();
 				hset.publish_history_sensors();
 			}
+		}
+		// all_history_* is documented as "every history event", so the bot path has to
+		// feed it too - including the drive_* events the normal set filters out.
+		if (auto& hset = get_all_history_set(); hset.using_history()) {
+			hset.save_received_values(history.type, history.history_tag_type, std::string_view{history.tag, history.tag_len},
+			                          history.scaled_voltage, history.scaled_voltage2, history.extra);
+			parent_->defer([this]() { publish_all_history_state(); });
 		}
 		if (history_timeout_started > 0) {
 			history_timeout_started = 0;
@@ -159,11 +168,7 @@ SesameLock::publish_lock_state(bool force_publish) {
 	}
 	if (state == st && force_publish) {
 		ESP_LOGD(TAG, "'%s': (Force) Sending state %s", this->name_.c_str(), LOG_STR_ARG(lock_state_to_string(state)));
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 4, 0)
 		state_callback_.call(state);
-#else
-		state_callback_.call();
-#endif
 	}
 	publish_state(st);
 	motor_moved = false;
@@ -235,7 +240,8 @@ SesameLock::lock(float history_tag_type, std::string_view tag) {
 		return;
 	}
 	if (std::isnan(history_tag_type)) {
-		parent_->sesame.lock(tag);
+		// Was lock(tag): a plain string tag (NaN tag type) sent the opposite command.
+		parent_->sesame.unlock(tag);
 		return;
 	}
 	std::array<std::byte, libsesame3bt::HISTORY_TAG_UUID_SIZE> uuid;
@@ -267,7 +273,8 @@ void
 SesameLock::reflect_status_changed() {
 	const auto& sesame_status = parent_->sesame_status;
 	if (!sesame_status) {
-		update_lock_state(LockState::LOCK_STATE_NONE);
+		// No measurement yet. Do not force NONE here: test_unknown_state() owns the
+		// grace period so a reconnect inside unknown_state_timeout keeps the state.
 		return;
 	}
 	if (is_bot1()) {

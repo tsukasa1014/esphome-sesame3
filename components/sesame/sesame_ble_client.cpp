@@ -11,6 +11,18 @@ void SesameBLEClient::set_state(esp32_ble_tracker::ClientState st) {
   esp32_ble_client::BLEClientBase::set_state(st);
 }
 
+void SesameBLEClient::connect() {
+  const auto before = this->state();
+  esp32_ble_client::BLEClientBase::connect();
+  // A synchronous esp_ble_gattc_open() rejection moves the client straight back to
+  // IDLE inside the parent call, so the owner's loop never observes CONNECTING and
+  // its retry backoff would be skipped. Report the failed attempt instead.
+  if (this->owner_ != nullptr && this->state() == esp32_ble_tracker::ClientState::IDLE &&
+      before != esp32_ble_tracker::ClientState::IDLE) {
+    this->owner_->on_connect_attempt_failed();
+  }
+}
+
 bool SesameBLEClient::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                           esp_ble_gattc_cb_param_t *param) {
   if (!esp32_ble_client::BLEClientBase::gattc_event_handler(event, gattc_if, param))

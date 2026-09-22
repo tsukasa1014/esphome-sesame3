@@ -82,6 +82,21 @@ sesame:
       all_history_tag_type:
         id: sesame1_all_history_tag_type
         name: "sesame1_all_history_tag_type"
+      all_history_scaled_voltage:
+        id: sesame1_all_history_scaled_voltage
+        name: "sesame1_all_history_scaled_voltage"
+      all_history_battery_pct:
+        id: sesame1_all_history_battery_pct
+        name: "sesame1_all_history_battery_pct"
+      all_history_scaled_voltage2:
+        id: sesame1_all_history_scaled_voltage2
+        name: "sesame1_all_history_scaled_voltage2"
+      all_history_battery_pct2:
+        id: sesame1_all_history_battery_pct2
+        name: "sesame1_all_history_battery_pct2"
+      all_history_extra:
+        id: sesame1_all_history_extra
+        name: "sesame1_all_history_extra"
 
   - id: bot2
     model: sesame_bot_2
@@ -97,3 +112,19 @@ sesame:
         name: "bot2_running"
     connection_sensor:
       name: "bot2_connection_sensor"
+
+# Exercises the public lock API so the codegen paths for tagged, untagged and
+# NaN-tag-type commands are compiled (an inverted command on the NaN branch was
+# a real bug). Not a runtime test - these run only if the button is pressed.
+button:
+  - platform: template
+    name: "exercise lock api"
+    on_press:
+      - lambda: |-
+          id(lock_1).lock();
+          id(lock_1).unlock();
+          id(lock_1).lock("api test");
+          id(lock_1).unlock("api test");
+          id(lock_1).lock(1.0f, "uuid tag");
+          id(lock_1).unlock(1.0f, "uuid tag");
+          id(lock_1).open("api test");

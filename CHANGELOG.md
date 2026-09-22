@@ -22,6 +22,27 @@
   - `sesame` can no longer be combined with `esphome-sesame_server` (`CONFLICTS_WITH = ["sesame_server"]`).
     Use `always_connect: true` plus `update_interval` for Touch / Remote style devices.
 - Requires ESPHome 2026.9.0 or later (`min_version`).
+- Fixes found in the standard-BLE review:
+  - `unlock(tag)` with a string tag (a NaN `history_tag_type`) sent a **lock** command.
+    The inverted call existed in v0.31.0 as well; the tagged `unlock` now unlocks.
+  - Measurements are no longer published before the session is authenticated.
+    `libsesame3bt-core` accepts plaintext notifications, so a state received while the
+    device was still authenticating must not reach the lock and battery sensors.
+  - A normal polling disconnect (`always_connect: false`) keeps the last battery values
+    instead of blanking them, and `unknown_state_timeout` now really applies: the lock
+    keeps its state for the grace period and only then reports `NONE`.
+  - The "link never opened" recovery path now feeds the same stalled-controller counter
+    as the disconnect watchdog, and a connection attempt that the controller rejects
+    synchronously goes through the configured retry backoff instead of retrying per
+    advertisement.
+  - The first-generation SESAME bot now also updates `all_history_*`, which is
+    documented as "every history event".
+  - `sesame_ble` names the Touch 2 / Face 2 / Bot 3 / BLE Connector models instead of
+    reporting `UNKNOWN`.
+  - Documentation: the sample `external_components` block points at the fork branch that
+    carries the port, the retry description matches the implementation, the history
+    lambda example no longer prints decrypted tags, and the security notes describe the
+    library's plaintext acceptance and the `text_sensor` VERBOSE logging.
 
 ## [v0.31.0] 2026-08-23
 - Bump libsesame3bt to 0.50.0

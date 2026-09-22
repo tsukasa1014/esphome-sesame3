@@ -64,6 +64,22 @@ model_str(Sesame::model_t model) {
 			return "Face AI";
 		case Sesame::model_t::open_sensor_2:
 			return "Open Sensor 2";
+		case Sesame::model_t::sesame_touch_2:
+			return "Touch 2";
+		case Sesame::model_t::sesame_touch_2_pro:
+			return "Touch 2 PRO";
+		case Sesame::model_t::sesame_face_2:
+			return "Face 2";
+		case Sesame::model_t::sesame_face_2_pro:
+			return "Face 2 PRO";
+		case Sesame::model_t::sesame_face_2_ai:
+			return "Face 2 AI";
+		case Sesame::model_t::sesame_face_2_pro_ai:
+			return "Face 2 PRO AI";
+		case Sesame::model_t::sesame_bot_3:
+			return "Bot 3";
+		case Sesame::model_t::ble_connector:
+			return "BLE Connector";
 		default:
 			return "UNKNOWN";
 	}

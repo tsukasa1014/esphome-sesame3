@@ -17,7 +17,6 @@ namespace sesame_lock {
 
 class BinarySensorWithInvalidate : public binary_sensor::BinarySensor {
  public:
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 4, 0)
 	void set_state_internal(esphome::optional<bool> state) {
 		if (state.has_value()) {
 			this->flags_.has_state = true;
@@ -29,15 +28,6 @@ class BinarySensorWithInvalidate : public binary_sensor::BinarySensor {
 	esphome::optional<bool> get_state_internal() const {
 		return this->flags_.has_state ? esphome::optional<bool>(this->state) : esphome::nullopt;
 	}
-#else
-	void set_state_internal(esphome::optional<bool> state) {
-		this->state_ = state;
-		if (state.has_value()) {
-			this->state = *state;
-		}
-	}
-	esphome::optional<bool> get_state_internal() const { return this->state_; }
-#endif
 };
 
 enum class state_t : int8_t { not_connected, connecting, authenticating, running, wait_disconnected };
@@ -71,9 +61,11 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	void set_connection_timeout(uint32_t timeout) { connection_timeout = timeout; }
 	void set_feature(Feature* feature) { this->feature = feature; }
 	void set_always_connect(bool always) { this->always_connect = always; }
+	// Called by SesameBLEClient when the controller rejects a connection attempt
+	// synchronously, so the retry backoff still applies.
+	void on_connect_attempt_failed() { connect_attempt_failed_ = true; }
 	virtual float get_setup_priority() const override { return setup_priority::AFTER_WIFI; };
 	virtual void update() override;
-	void make_unknown();
 
  private:
 	SesameBLEClient* ble_client_ = nullptr;
@@ -125,6 +117,7 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	uint8_t ble_restart_attempts_ = 0;
 	uint8_t ble_restart_count_ = 0;
 	uint32_t last_ble_restart_ = 0;
+	bool connect_attempt_failed_ = false;
 	union {
 		uint8_t value;
 		struct {
@@ -136,9 +129,10 @@ class SesameComponent : public PollingComponent, public libsesame3bt::core::Sesa
 	void set_state(state_t);
 	void reflect_sesame_status();
 	void publish_connection_state(bool connected);
-	void disconnect();
+	void disconnect(bool keep_measurements = false);
 	bool force_idle_if_unopened_();
-	void reset_session_();
+	void note_stalled_link_();
+	void reset_session_(bool keep_measurements = false);
 	void schedule_retry_();
 	void pump_tx_();
 };

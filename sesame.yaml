@@ -9,10 +9,12 @@ esphome:
 external_components:
   - source:
       type: git
-      url: https://github.com/homy-newfs8/esphome-sesame3
-      # v0.32.0 is the first release with the standard BLE stack. Until the tag
-      # exists, use the branch that carries the change or a local path.
-      ref: v0.32.0
+      # The standard-BLE port is not released on homy-newfs8/esphome-sesame3 yet
+      # (upstream is still v0.31.0 / NimBLE), so this points at the fork branch
+      # that carries it. Switch back to the upstream URL and a release tag once
+      # v0.32.0 exists.
+      url: https://github.com/tsukasa1014/esphome-sesame3
+      ref: codex/esphome-standard-ble
     components: [sesame, sesame_ble]
   # - source: "components"
   #   components: [sesame, sesame_ble]
@@ -127,6 +129,11 @@ sesame:
       ##   lambda: id(lock_1).lock("More specific value")
       ## See example above api: services: section.
       tag: "My awesome system"
+      ## Send NONE (or unknown_state_alternative) to Home Assistant once the SESAME
+      ## has been unreachable for this long. Defaults to 20s. `0s` disables the grace period.
+      # unknown_state_timeout: 20s
+      ## Report JAMMED instead of NONE when the state is unknown
+      # unknown_state_alternative: JAMMED
       ## expose operation history tag text
       history_tag:
         name: "Lock1_history_tag"
@@ -162,14 +169,15 @@ sesame:
     ##
     ## BLE connection timeout
     # timeout: 10s
-    ## The ESP32 module will reboot after the specified number of connection failures (0 = do not reboot)
+    ## Number of consecutive connection failures after which the retry delay is capped
+    ## at 60s instead of backing off further (0 = pure backoff, 3s to 48s + jitter).
+    ## This does not reboot the ESP32; recovery from a stalled controller is handled by
+    ## restarting the ESPHome BLE stack.
     # connect_retry_limit: 0
-    ## Send NONE(or alternative) state to HomeAssistant if disconnected from SESAME for specified time
-    # unknown_state_timeout: 20s
 
   ## You can specify and control multiple SESAME devices with one ESP32.
-  ## This module reboots if one of specified devices unable to connect for a certain period of time.
-  ## Be careful not to specify a mix of stable and unstable devices.
+  ## A device that cannot connect is retried with a backoff and does not reboot the module,
+  ## so stable and unstable devices can share one ESP32.
   ##
   # - id: lock2
   #   model: sesame_3
