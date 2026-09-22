@@ -34,8 +34,9 @@
 - `history_tag` / `all_history_tag` / `history_extra` / `all_history_extra` は復号済みの
   履歴データを公開する。ESPHome は text_sensor の値を `VERBOSE` でログ出力するため、
   値をデバイスログに残したくない場合は次の運用で回避する。
-  - `logger:` を `DEBUG` 以下に保つ（個々の text_sensor に `log_level: VERBOSE` を
-    付けない）。
+  - `logger.level` を `DEBUG` 以下にする（コンパイル時の上限として指定する）。
+    タグ別の設定を使う場合は `logger.logs` の `text_sensor` 側に VERBOSE を指定しない。
+    なお、個々の text_sensor エンティティに `log_level` という設定は無い。
   - lambda からもタグ・extra の値を出力しない。
   これは実装で出力を止めたのではなく、**ログレベルによる制約付きの回避**である。
   完全な抑止が必要なら、履歴TextSensorの値ログを抑止する仕組みを別途用意する必要がある。

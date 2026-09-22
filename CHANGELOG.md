@@ -23,8 +23,9 @@
     Use `always_connect: true` plus `update_interval` for Touch / Remote style devices.
 - Requires ESPHome 2026.9.0 or later (`min_version`).
 - 標準BLE移植のレビューで見つかった問題の修正:
-  - 文字列タグ（`history_tag_type` が NaN）の `lock(tag)` と `unlock(tag)` が、それぞれ逆の
-    コマンドを送っていた。この取り違えは v0.31.0 から存在し、両方を正しい向きに修正した。
+  - 文字列タグ（`history_tag_type` が NaN）の `unlock(tag)` が施錠コマンドを送っていた
+    （v0.31.0 からの誤り）。加えて、この移植の途中（c28ff7f）で `lock(tag)` 側も逆にして
+    しまっていたため、両方を正しい向きに戻した。
   - 認証が完了する前に測定値を公開しないようにした。`libsesame3bt-core` は平文通知を受理するため、
     認証中に届いた状態をロック・電池センサーへ反映してはいけない。
   - 正常なポーリング終了（`always_connect: false`）では測定値を保持し、その後の切断完了処理でも

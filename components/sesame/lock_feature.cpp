@@ -244,7 +244,7 @@ SesameLock::lock(float history_tag_type, std::string_view tag) {
 	}
 	if (std::isnan(history_tag_type)) {
 		// A plain string tag (NaN tag type) must send the command this function is
-		// named after. v0.31.0 sent the opposite one here.
+		// named after. The lock side was correct until c28ff7f inverted it by mistake.
 		parent_->sesame.lock(tag);
 		return;
 	}
@@ -262,7 +262,8 @@ SesameLock::unlock(float history_tag_type, std::string_view tag) {
 		return;
 	}
 	if (std::isnan(history_tag_type)) {
-		// Was lock(tag): a plain string tag (NaN tag type) sent the opposite command.
+		// Was lock(tag) in v0.31.0: the unlock side sent the opposite command until
+		// 9cd2411 fixed it.
 		parent_->sesame.unlock(tag);
 		return;
 	}

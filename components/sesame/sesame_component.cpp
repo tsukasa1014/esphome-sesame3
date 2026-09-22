@@ -261,10 +261,12 @@ void SesameComponent::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_i
         }
       }
       break;
-    case ESP_GATTC_DISCONNECT_EVT:
     case ESP_GATTC_CLOSE_EVT:
-      // A real close arrived, so this was not a lost-event settle.
+      // Only a real CLOSE proves the controller finished the disconnect; a late
+      // DISCONNECT does not, so it must not cancel a recorded watchdog settle.
       watchdog_pending_ = false;
+      [[fallthrough]];
+    case ESP_GATTC_DISCONNECT_EVT:
       if (my_state != state_t::not_connected && my_state != state_t::wait_disconnected) {
         reset_session_();
         ble_client_->set_auto_connect(false);
@@ -325,6 +327,9 @@ void SesameComponent::loop() {
   if (watchdog_pending_) {
     watchdog_pending_ = false;
     ESP_LOGW(TAG, "Disconnect did not complete; the controller stopped reporting events");
+    // The disconnect wait timed out, so this was not a clean end of a polling cycle:
+    // drop the measurement-keeping qualification before the retry is scheduled.
+    polling_complete_ = false;
     note_stalled_link_();
   }
 

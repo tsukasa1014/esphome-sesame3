@@ -30,6 +30,9 @@ class SesameBLEClient : public esp32_ble_client::BLEClientBase {
  private:
   SesameComponent *owner_{nullptr};
   bool node_ready_{false};
+  // True only while the parent is dispatching a CLOSE_EVT, so that the shared
+  // disconnect-complete hook can tell the parent's watchdog from a peer timeout.
+  bool handling_close_{false};
 };
 
 }  // namespace esphome::sesame_lock
