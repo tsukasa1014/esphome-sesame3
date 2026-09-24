@@ -21,11 +21,21 @@
 > If you experience instability, please try using an newer or earlier version of ESPHome, such as 2026.4.x.
 
 > [!IMPORTANT]
-> Since v0.32.0 this component uses ESPHome's own BLE stack instead of its own
-> NimBLE client. `sesame`, `esp32_ble`, `esp32_ble_tracker`, `bluetooth_proxy`
-> and BLE presence sensors can therefore run on the same ESP32. Remove the old
-> NimBLE `sdkconfig_options` (`CONFIG_BT_NIMBLE_*`) when upgrading; the
-> component rejects a configuration that still enables NimBLE.
+> このfork（`tsukasa1014/esphome-sesame3`）では、v0.32.0 相当の変更として、独自のNimBLE
+> クライアントではなく **ESPHome標準のBLEスタック**を使うように変更しました。そのため
+> `sesame` / `esp32_ble` / `esp32_ble_tracker` / `bluetooth_proxy` と、スマホのBLE
+> Presence検知を同じESP32で同時に動かせます。移行するときは、古いNimBLEの
+> `sdkconfig_options`（`CONFIG_BT_NIMBLE_*`）を削除してください。NimBLEが有効なままの
+> 設定はビルド時に拒否します。
+
+## このフォークについて
+
+- 設計: Astra（OpenAIのモデル）
+- 実装: DeepSeek V4.1 Flash
+- 検証済みのハードウェア: **ESP32-S3（N16R8）のみ**。ESP32（無印）、ESP32-S2、ESP32-C3、
+  ESP32-C6 など、他のボードでは動作確認していません。
+- 本家 `homy-newfs8/esphome-sesame3` は v0.31.0（NimBLE）のままです。標準BLE対応版は、
+  このforkの `codex/esphome-standard-ble` ブランチにあります。
 
 ## セキュリティ上の注意
 
